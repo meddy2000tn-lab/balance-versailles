@@ -6,7 +6,6 @@
 <title>Balance credit & apports - Versailles</title>
 <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
 <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
-<script src="https://unpkg.com/@babel/standalone/babel.min.js" crossorigin></script>
 <style>html,body{margin:0;padding:0}#root{min-height:100vh}
 #bcerr{display:none;padding:20px;font-family:system-ui,sans-serif;font-size:14px;color:#9E3030;white-space:pre-wrap;line-height:1.5}
 </style>
@@ -21,12 +20,11 @@ window.__bcError = function(msg){
   if(e){e.style.display='block';e.textContent='Erreur au demarrage :\n\n'+msg;}
 };
 window.addEventListener('error', function(ev){
-  if(ev.filename && ev.filename.indexOf('babel')>=0) return; // on ignore le bruit babel
   window.__bcError((ev.error && ev.error.stack) ? ev.error.stack : ev.message);
 });
 </script>
 
-<!-- Bloc Firebase : module ES independant. Type "module" => Babel ne le compile pas. -->
+<!-- Firebase : module ES independant -->
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
   import { getFirestore, doc, onSnapshot, setDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
@@ -56,514 +54,471 @@ window.addEventListener('error', function(ev){
       async save(data) { await setDoc(DOC, { payload: data, updatedAt: Date.now() }); }
     };
     window.dispatchEvent(new Event("cloud-ready"));
-  } catch (e) { window.__cloudError = e.message; }
+  } catch (e) { window.__cloudError = e.message; console.error(e); }
 </script>
 
-<!-- Application : on stocke le code JSX dans une balise NON executable, -->
-<!-- puis on le compile nous-memes avec Babel.transform. Babel n'auto-scanne PAS. -->
-<script type="text/plain" id="app-source">
-const { useState, useEffect, useMemo, useRef } = React;
-
-/* ============================================================
-   Balance crédit & apports — Mehdi / Meriem
-   115 avenue de Paris, Versailles
-   Persistance : stockage local de l'artefact (window.storage)
-   + export / import JSON de secours.
-   ============================================================ */
-
-const STORAGE_KEY = "balance_credit_versailles_v1";
-const EPS = 0.005;
-
-const CATEGORIES = [
-  "Apport notaire",
-  "Frais de notaire",
-  "Caution Crédit Logement",
-  "Mensualité de prêt",
-  "Assurance emprunteur",
-  "Remboursement anticipé",
-  "Indemnité de remboursement anticipé / frais bancaires",
-  "Travaux financés personnellement",
-  "Travaux financés par le crédit",
-  "Cuisine équipée",
-  "Ameublement / équipement du bien",
-  "Menuiserie / agencement",
-  "Électroménager",
-  "Frais bancaires",
-  "Remboursement Crédit Logement reçu",
-  "Ajustement entre Mehdi et Meriem",
-  "Autre dépense commune",
-];
-
-const DEFAULT_SETTINGS = {
-  bank: "Boursobank",
-  loanType: "Amortissable à taux fixe",
-  principal: 644200,
-  durationMonths: 252,
-  annualRate: 3.0,
-  baseMonthlyPayment: 3572.72,
-  insMehdi: 54.11,
-  insMeriem: 32.21,
-  insuranceMode: "fixed", // "fixed" | "crd" (recalculée sur capital restant dû)
-  firstPaymentDate: "2026-07-12", // date officielle Boursobank (avis d'échéance) — 1re échéance prélevée au 12/07/2026
-  costMode: "strict", // "strict" (50/50 partout) | "individual" (assurance réelle)
-  officialCRDAmount: "",
-  officialCRDDate: "",
-  acquisition: 528646, // prix de vente réel (attestation notariée du 12/06/2026), et non 550 000 €
-  worksEnvelope: 130000,
-  worksReleases: [
+<!-- Application deja compilee en JS pur (aucun JSX, aucun Babel) -->
+<script>
+(() => {
+  const { useState, useEffect, useMemo, useRef } = React;
+  const EPS = 5e-3;
+  const CATEGORIES = [
+    "Apport notaire",
+    "Frais de notaire",
+    "Caution Cr\xE9dit Logement",
+    "Mensualit\xE9 de pr\xEAt",
+    "Assurance emprunteur",
+    "Remboursement anticip\xE9",
+    "Indemnit\xE9 de remboursement anticip\xE9 / frais bancaires",
+    "Travaux financ\xE9s personnellement",
+    "Travaux financ\xE9s par le cr\xE9dit",
+    "Cuisine \xE9quip\xE9e",
+    "Ameublement / \xE9quipement du bien",
+    "Menuiserie / agencement",
+    "\xC9lectrom\xE9nager",
+    "Frais bancaires",
+    "Remboursement Cr\xE9dit Logement re\xE7u",
+    "Ajustement entre Mehdi et Meriem",
+    "Autre d\xE9pense commune"
+  ];
+  const DEFAULT_SETTINGS = {
+    bank: "Boursobank",
+    loanType: "Amortissable \xE0 taux fixe",
+    principal: 644200,
+    durationMonths: 252,
+    annualRate: 3,
+    baseMonthlyPayment: 3572.72,
+    insMehdi: 54.11,
+    insMeriem: 32.21,
+    insuranceMode: "fixed",
+    // "fixed" | "crd" (recalculée sur capital restant dû)
+    firstPaymentDate: "2026-07-12",
+    // date officielle Boursobank (avis d'échéance) — 1re échéance prélevée au 12/07/2026
+    costMode: "strict",
+    // "strict" (50/50 partout) | "individual" (assurance réelle)
+    officialCRDAmount: "",
+    officialCRDDate: "",
+    acquisition: 528646,
+    // prix de vente réel (attestation notariée du 12/06/2026), et non 550 000 €
+    worksEnvelope: 13e4,
+    worksReleases: [
+      {
+        id: "release-hdn-ancrage-1",
+        date: "2026-06-26",
+        amount: 54e3,
+        note: "HDN ANCRAGE \u2014 acompte 40 % devis D202600009 (vers\xE9 directement \xE0 l'entreprise par Boursobank)"
+      }
+    ],
+    // {id, date, amount, note} — suivi de l'enveloppe travaux uniquement, sans effet sur la balance ni l'amortissement
+    caution: 6813.38,
+    // Montant FINAL — ne jamais utiliser 6 583 €
+    ownMehdi: 50,
+    ownMeriem: 50,
+    targetMehdi: 50,
+    targetMeriem: 50
+  };
+  const INITIAL_OPS = [
     {
-      id: "release-hdn-ancrage-1",
-      date: "2026-06-26",
-      amount: 54000,
-      note: "HDN ANCRAGE — acompte 40 % devis D202600009 (versé directement à l'entreprise par Boursobank)",
+      id: "init-notaire-mars",
+      date: "",
+      category: "Apport notaire",
+      label: "Virements de mars au notaire",
+      total: 26842,
+      paidMehdi: 13421,
+      paidMeriem: 13421,
+      paidJoint: 0,
+      shareMehdi: 13421,
+      shareMeriem: 13421,
+      capital: 26842,
+      interest: 0,
+      insurance: 0,
+      fees: 0,
+      notes: "Date exacte \xE0 compl\xE9ter. \xC0 v\xE9rifier : le plan de financement notari\xE9 (prix r\xE9el 528 646 \u20AC) implique un apport personnel total d'environ 62 459 \u20AC, frais de garantie inclus."
     },
-  ], // {id, date, amount, note} — suivi de l'enveloppe travaux uniquement, sans effet sur la balance ni l'amortissement
-  caution: 6813.38, // Montant FINAL — ne jamais utiliser 6 583 €
-  ownMehdi: 50,
-  ownMeriem: 50,
-  targetMehdi: 50,
-  targetMeriem: 50,
-};
-
-const INITIAL_OPS = [
-  {
-    id: "init-notaire-mars",
-    date: "",
-    category: "Apport notaire",
-    label: "Virements de mars au notaire",
-    total: 26842,
-    paidMehdi: 13421,
-    paidMeriem: 13421,
-    paidJoint: 0,
-    shareMehdi: 13421,
-    shareMeriem: 13421,
-    capital: 26842,
-    interest: 0,
-    insurance: 0,
-    fees: 0,
-    notes: "Date exacte à compléter. À vérifier : le plan de financement notarié (prix réel 528 646 €) implique un apport personnel total d'environ 62 459 €, frais de garantie inclus.",
-  },
-  {
-    id: "init-notaire-complement",
-    date: "",
-    category: "Apport notaire",
-    label: "Virement complémentaire au notaire",
-    total: 52932.6,
-    paidMehdi: 26466.3,
-    paidMeriem: 26466.3,
-    paidJoint: 0,
-    shareMehdi: 26466.3,
-    shareMeriem: 26466.3,
-    capital: 52932.6,
-    interest: 0,
-    insurance: 0,
-    fees: 0,
-    notes: "Date exacte à compléter (non inventée).",
-  },
-  {
-    id: "init-caution",
-    date: "",
-    category: "Caution Crédit Logement",
-    label: "Caution Crédit Logement (montant final)",
-    total: 6813.38,
-    paidMehdi: 3406.69,
-    paidMeriem: 3406.69,
-    paidJoint: 0,
-    shareMehdi: 3406.69,
-    shareMeriem: 3406.69,
-    capital: 0,
-    interest: 0,
-    insurance: 0,
-    fees: 6813.38,
-    notes:
-      "Montant final retenu : 6 813,38 € (l'ancien montant de 6 583 € ne doit plus être utilisé). Classée en coût non récupérable tant qu'aucune restitution n'est enregistrée.",
-  },
-  {
-    id: "init-cuisine-bocklip",
-    date: "",
-    category: "Cuisine équipée",
-    label: "Acompte 50 % façades de cuisine Bocklip",
-    total: 4738.02,
-    paidMehdi: 4738.02,
-    paidMeriem: 0,
-    paidJoint: 0,
-    shareMehdi: 2369.01,
-    shareMeriem: 2369.01,
-    capital: 4738.02,
-    interest: 0,
-    insurance: 0,
-    fees: 0,
-    notes:
-      "Acompte de 50 % payé par Mehdi. Dépense liée au bien, hors crédit, répartie 50/50 : chacun en supporte 2 369,01 €. Pensez à enregistrer le solde de 50 % à la livraison.",
-  },
-  {
-    id: "init-carrelage-leroymerlin",
-    date: "2026-07-06",
-    category: "Menuiserie / agencement",
-    label: "Carrelage mural mosaïque + livraison (Leroy Merlin, facture 608722)",
-    total: 587.10,
-    paidMehdi: 0,
-    paidMeriem: 0,
-    paidJoint: 587.10,
-    shareMehdi: 293.55,
-    shareMeriem: 293.55,
-    capital: 587.10,
-    interest: 0,
-    insurance: 0,
-    fees: 0,
-    notes:
-      "Payé depuis le compte commun (réparti 50/50). Mosaïque 4.8x4.8 Renaissance (28 u.) 557,20 € + livraison 29,90 €. Facture Leroy Merlin n° 608722 du 06/07/2026.",
-  },
-  {
-    id: "init-vidange-state",
-    date: "2026-07-22",
-    category: "Travaux financés personnellement",
-    label: "Vidange colonne de chauffage (STATE, devis D26070241-A1)",
-    total: 1153.90,
-    paidMehdi: 0,
-    paidMeriem: 0,
-    paidJoint: 1153.90,
-    shareMehdi: 576.95,
-    shareMeriem: 576.95,
-    capital: 0,
-    interest: 0,
-    insurance: 0,
-    fees: 1153.90,
-    notes:
-      "Payé depuis le compte commun (réparti 50/50). Forfait isolement, vidange, remise en eau et purge d'une colonne de chauffage. STATE Génie Climatique, réf. D26070241-A1. Classé en coût non récupérable (prestation de service).",
-  },
-  {
-    id: "init-meubles-sdb-entree",
-    date: "",
-    category: "Ameublement / équipement du bien",
-    label: "Meubles salle de bain commune + entrée",
-    total: 1504.90,
-    paidMehdi: 1504.90,
-    paidMeriem: 0,
-    paidJoint: 0,
-    shareMehdi: 752.45,
-    shareMeriem: 752.45,
-    capital: 1504.90,
-    interest: 0,
-    insurance: 0,
-    fees: 0,
-    notes:
-      "Payé par Mehdi. Dépense liée au bien, hors crédit, répartie 50/50 : chacun en supporte 752,45 €.",
-  },
-  {
-    id: "init-ajustement-meriem-1",
-    date: "2026-09-01",
-    category: "Ajustement entre Mehdi et Meriem",
-    label: "Remboursement de Meriem à Mehdi (solde de la balance)",
-    total: 3121.46,
-    paidMehdi: -3121.46,
-    paidMeriem: 3121.46,
-    paidJoint: 0,
-    shareMehdi: 0,
-    shareMeriem: 0,
-    capital: 0,
-    interest: 0,
-    insurance: 0,
-    fees: 0,
-    notes:
-      "Virement « Remboursement Frais Travaux » reçu le 01/09/2026. Compense l'acompte cuisine Bocklip (2 369,01 €) et les meubles SDB/entrée (752,45 €) que Mehdi avait avancés. Ramène la balance à l'équilibre.",
-  },
-];
-
-const freshData = () => ({
-  settings: { ...DEFAULT_SETTINGS },
-  ops: INITIAL_OPS.map((o) => ({ ...o })),
-  preps: [],
-  history: [
     {
-      ts: new Date().toISOString(),
-      action:
-        "Initialisation avec les données Boursobank (crédit 644 200 €, caution finale 6 813,38 €, apports 50/50 → balance 0 €).",
+      id: "init-notaire-complement",
+      date: "",
+      category: "Apport notaire",
+      label: "Virement compl\xE9mentaire au notaire",
+      total: 52932.6,
+      paidMehdi: 26466.3,
+      paidMeriem: 26466.3,
+      paidJoint: 0,
+      shareMehdi: 26466.3,
+      shareMeriem: 26466.3,
+      capital: 52932.6,
+      interest: 0,
+      insurance: 0,
+      fees: 0,
+      notes: "Date exacte \xE0 compl\xE9ter (non invent\xE9e)."
     },
-  ],
-});
-
-/* ————— Utilitaires ————— */
-const num = (v) => {
-  if (typeof v === "number") return isFinite(v) ? v : 0;
-  if (v === null || v === undefined || v === "") return 0;
-  const n = parseFloat(String(v).replace(/\s/g, "").replace(",", "."));
-  return isFinite(n) ? n : 0;
-};
-const fmt = (n) =>
-  new Intl.NumberFormat("fr-FR", {
+    {
+      id: "init-caution",
+      date: "",
+      category: "Caution Cr\xE9dit Logement",
+      label: "Caution Cr\xE9dit Logement (montant final)",
+      total: 6813.38,
+      paidMehdi: 3406.69,
+      paidMeriem: 3406.69,
+      paidJoint: 0,
+      shareMehdi: 3406.69,
+      shareMeriem: 3406.69,
+      capital: 0,
+      interest: 0,
+      insurance: 0,
+      fees: 6813.38,
+      notes: "Montant final retenu : 6 813,38 \u20AC (l'ancien montant de 6 583 \u20AC ne doit plus \xEAtre utilis\xE9). Class\xE9e en co\xFBt non r\xE9cup\xE9rable tant qu'aucune restitution n'est enregistr\xE9e."
+    },
+    {
+      id: "init-cuisine-bocklip",
+      date: "",
+      category: "Cuisine \xE9quip\xE9e",
+      label: "Acompte 50 % fa\xE7ades de cuisine Bocklip",
+      total: 4738.02,
+      paidMehdi: 4738.02,
+      paidMeriem: 0,
+      paidJoint: 0,
+      shareMehdi: 2369.01,
+      shareMeriem: 2369.01,
+      capital: 4738.02,
+      interest: 0,
+      insurance: 0,
+      fees: 0,
+      notes: "Acompte de 50 % pay\xE9 par Mehdi. D\xE9pense li\xE9e au bien, hors cr\xE9dit, r\xE9partie 50/50 : chacun en supporte 2 369,01 \u20AC. Pensez \xE0 enregistrer le solde de 50 % \xE0 la livraison."
+    },
+    {
+      id: "init-carrelage-leroymerlin",
+      date: "2026-07-06",
+      category: "Menuiserie / agencement",
+      label: "Carrelage mural mosa\xEFque + livraison (Leroy Merlin, facture 608722)",
+      total: 587.1,
+      paidMehdi: 0,
+      paidMeriem: 0,
+      paidJoint: 587.1,
+      shareMehdi: 293.55,
+      shareMeriem: 293.55,
+      capital: 587.1,
+      interest: 0,
+      insurance: 0,
+      fees: 0,
+      notes: "Pay\xE9 depuis le compte commun (r\xE9parti 50/50). Mosa\xEFque 4.8x4.8 Renaissance (28 u.) 557,20 \u20AC + livraison 29,90 \u20AC. Facture Leroy Merlin n\xB0 608722 du 06/07/2026."
+    },
+    {
+      id: "init-vidange-state",
+      date: "2026-07-22",
+      category: "Travaux financ\xE9s personnellement",
+      label: "Vidange colonne de chauffage (STATE, devis D26070241-A1)",
+      total: 1153.9,
+      paidMehdi: 0,
+      paidMeriem: 0,
+      paidJoint: 1153.9,
+      shareMehdi: 576.95,
+      shareMeriem: 576.95,
+      capital: 0,
+      interest: 0,
+      insurance: 0,
+      fees: 1153.9,
+      notes: "Pay\xE9 depuis le compte commun (r\xE9parti 50/50). Forfait isolement, vidange, remise en eau et purge d'une colonne de chauffage. STATE G\xE9nie Climatique, r\xE9f. D26070241-A1. Class\xE9 en co\xFBt non r\xE9cup\xE9rable (prestation de service)."
+    },
+    {
+      id: "init-meubles-sdb-entree",
+      date: "",
+      category: "Ameublement / \xE9quipement du bien",
+      label: "Meubles salle de bain commune + entr\xE9e",
+      total: 1504.9,
+      paidMehdi: 1504.9,
+      paidMeriem: 0,
+      paidJoint: 0,
+      shareMehdi: 752.45,
+      shareMeriem: 752.45,
+      capital: 1504.9,
+      interest: 0,
+      insurance: 0,
+      fees: 0,
+      notes: "Pay\xE9 par Mehdi. D\xE9pense li\xE9e au bien, hors cr\xE9dit, r\xE9partie 50/50 : chacun en supporte 752,45 \u20AC."
+    },
+    {
+      id: "init-ajustement-meriem-1",
+      date: "2026-09-01",
+      category: "Ajustement entre Mehdi et Meriem",
+      label: "Remboursement de Meriem \xE0 Mehdi (solde de la balance)",
+      total: 3121.46,
+      paidMehdi: -3121.46,
+      paidMeriem: 3121.46,
+      paidJoint: 0,
+      shareMehdi: 0,
+      shareMeriem: 0,
+      capital: 0,
+      interest: 0,
+      insurance: 0,
+      fees: 0,
+      notes: "Virement \xAB Remboursement Frais Travaux \xBB re\xE7u le 01/09/2026. Compense l'acompte cuisine Bocklip (2 369,01 \u20AC) et les meubles SDB/entr\xE9e (752,45 \u20AC) que Mehdi avait avanc\xE9s. Ram\xE8ne la balance \xE0 l'\xE9quilibre."
+    }
+  ];
+  const freshData = () => ({
+    settings: { ...DEFAULT_SETTINGS },
+    ops: INITIAL_OPS.map((o) => ({ ...o })),
+    preps: [],
+    history: [
+      {
+        ts: (/* @__PURE__ */ new Date()).toISOString(),
+        action: "Initialisation avec les donn\xE9es Boursobank (cr\xE9dit 644 200 \u20AC, caution finale 6 813,38 \u20AC, apports 50/50 \u2192 balance 0 \u20AC)."
+      }
+    ]
+  });
+  const num = (v) => {
+    if (typeof v === "number") return isFinite(v) ? v : 0;
+    if (v === null || v === void 0 || v === "") return 0;
+    const n = parseFloat(String(v).replace(/\s/g, "").replace(",", "."));
+    return isFinite(n) ? n : 0;
+  };
+  const fmt = (n) => new Intl.NumberFormat("fr-FR", {
     style: "currency",
     currency: "EUR",
     minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
+    maximumFractionDigits: 2
   }).format(isFinite(n) ? n : 0);
-const fmtDate = (iso) =>
-  iso ? new Date(iso + "T12:00:00").toLocaleDateString("fr-FR") : "—";
-const todayISO = () => {
-  const d = new Date();
-  const p = (x) => String(x).padStart(2, "0");
-  return d.getFullYear() + "-" + p(d.getMonth() + 1) + "-" + p(d.getDate());
-};
-const addMonthsISO = (iso, k) => {
-  const d = new Date(iso + "T12:00:00");
-  const day = d.getDate();
-  d.setDate(1);
-  d.setMonth(d.getMonth() + k);
-  const last = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
-  d.setDate(Math.min(day, last));
-  const p = (x) => String(x).padStart(2, "0");
-  return d.getFullYear() + "-" + p(d.getMonth() + 1) + "-" + p(d.getDate());
-};
-const annuity = (P, r, n) =>
-  n > 0 ? (r === 0 ? P / n : (P * r) / (1 - Math.pow(1 + r, -n))) : P;
-const uid = () => "id-" + Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
-const csvNum = (n) => (Math.round((num(n) + Number.EPSILON) * 100) / 100).toFixed(2).replace(".", ",");
-const csvCell = (s) => '"' + String(s ?? "").replace(/"/g, '""') + '"';
-
-function downloadText(name, text, mime) {
-  const blob = new Blob(["\ufeff" + text], { type: mime });
-  const a = document.createElement("a");
-  a.href = URL.createObjectURL(blob);
-  a.download = name;
-  a.click();
-  setTimeout(() => URL.revokeObjectURL(a.href), 8000);
-}
-
-/* ————— Moteur d'amortissement —————
-   Précision interne complète ; l'arrondi n'intervient qu'à l'affichage. */
-function sortedPreps(preps) {
-  return preps
-    .filter((p) => p.date && num(p.amount) > 0)
-    .slice()
-    .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
-}
-
-function buildSchedule(s, preps) {
-  const first = s.firstPaymentDate;
-  if (!first)
-    return {
-      ok: false,
-      reason:
-        "La date de première échéance n'est pas renseignée. Complétez-la dans « Crédit & paramètres » — aucune date n'est inventée à votre place.",
-      rows: [],
-      events: [],
-      totalInterest: 0,
-      totalInsurance: 0,
-      lastDate: null,
-    };
-  const r = num(s.annualRate) / 100 / 12;
-  const dur = Math.max(1, Math.round(num(s.durationMonths)) || 1);
-  let bal = num(s.principal);
-  let pay = num(s.baseMonthlyPayment) || annuity(bal, r, dur);
-  const insFixM = num(s.insMehdi);
-  const insFixMe = num(s.insMeriem);
-  const insRateM = num(s.principal) > 0 ? insFixM / num(s.principal) : 0;
-  const insRateMe = num(s.principal) > 0 ? insFixMe / num(s.principal) : 0;
-  const sorted = sortedPreps(preps);
-  let pi = 0;
-  const rows = [];
-  const events = [];
-  const offAmt = num(s.officialCRDAmount);
-  const offDate = s.officialCRDDate;
-  let offApplied = !(offAmt > 0 && offDate);
-  let paymentsMade = 0;
-
-  const applyPrep = (p, atLabel) => {
-    const before = bal;
-    const amt = Math.min(num(p.amount), bal);
-    const oldPay = pay;
-    /* Durée restante déduite du solde et de la mensualité courante :
-       conserve la date de fin réellement simulée (robuste même si la durée
-       contractuelle inclut une phase de différé). */
-    let remaining = Math.max(1, dur - paymentsMade);
-    if (r > 0 && oldPay > before * r) {
-      const nExact = Math.log(oldPay / (oldPay - before * r)) / Math.log(1 + r);
-      if (isFinite(nExact) && nExact > 0) remaining = Math.max(1, Math.round(nExact));
-    }
-    bal -= amt;
-    if (p.mode !== "reduce_duration") pay = annuity(bal, r, remaining);
-    events.push({
-      type: "prep",
-      prepId: p.id,
-      date: p.date,
-      balBefore: before,
-      applied: amt,
-      balAfter: bal,
-      oldPay,
-      newPay: pay,
-      remaining,
-      mode: p.mode,
-      atLabel,
-    });
+  const fmtDate = (iso) => iso ? (/* @__PURE__ */ new Date(iso + "T12:00:00")).toLocaleDateString("fr-FR") : "\u2014";
+  const todayISO = () => {
+    const d = /* @__PURE__ */ new Date();
+    const p = (x) => String(x).padStart(2, "0");
+    return d.getFullYear() + "-" + p(d.getMonth() + 1) + "-" + p(d.getDate());
   };
-
-  for (let n = 1; n <= 720 && bal > EPS; n++) {
-    const due = addMonthsISO(first, n - 1);
-    while (
-      pi < sorted.length &&
-      (sorted[pi].date < due ||
-        (sorted[pi].date === due && sorted[pi].sameDayOrder === "before"))
-    ) {
-      applyPrep(sorted[pi], "appliqué avant l'échéance du " + fmtDate(due));
-      pi++;
-    }
-    if (!offApplied && due >= offDate) {
-      events.push({ type: "recalage", date: due, balBefore: bal, balAfter: offAmt });
-      bal = offAmt;
-      offApplied = true;
-    }
-    if (bal <= EPS) break;
-    const interest = bal * r;
-    let capital = pay - interest;
-    if (capital <= 0) {
+  const addMonthsISO = (iso, k) => {
+    const d = /* @__PURE__ */ new Date(iso + "T12:00:00");
+    const day = d.getDate();
+    d.setDate(1);
+    d.setMonth(d.getMonth() + k);
+    const last = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+    d.setDate(Math.min(day, last));
+    const p = (x) => String(x).padStart(2, "0");
+    return d.getFullYear() + "-" + p(d.getMonth() + 1) + "-" + p(d.getDate());
+  };
+  const annuity = (P, r, n) => n > 0 ? r === 0 ? P / n : P * r / (1 - Math.pow(1 + r, -n)) : P;
+  const uid = () => "id-" + Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
+  const csvNum = (n) => (Math.round((num(n) + Number.EPSILON) * 100) / 100).toFixed(2).replace(".", ",");
+  const csvCell = (s) => '"' + String(s ?? "").replace(/"/g, '""') + '"';
+  function downloadText(name, text, mime) {
+    const blob = new Blob(["\uFEFF" + text], { type: mime });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = name;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 8e3);
+  }
+  function sortedPreps(preps) {
+    return preps.filter((p) => p.date && num(p.amount) > 0).slice().sort((a, b) => a.date < b.date ? -1 : a.date > b.date ? 1 : 0);
+  }
+  function buildSchedule(s, preps) {
+    const first = s.firstPaymentDate;
+    if (!first)
+      return {
+        ok: false,
+        reason: "La date de premi\xE8re \xE9ch\xE9ance n'est pas renseign\xE9e. Compl\xE9tez-la dans \xAB Cr\xE9dit & param\xE8tres \xBB \u2014 aucune date n'est invent\xE9e \xE0 votre place.",
+        rows: [],
+        events: [],
+        totalInterest: 0,
+        totalInsurance: 0,
+        lastDate: null
+      };
+    const r = num(s.annualRate) / 100 / 12;
+    const dur = Math.max(1, Math.round(num(s.durationMonths)) || 1);
+    let bal = num(s.principal);
+    let pay = num(s.baseMonthlyPayment) || annuity(bal, r, dur);
+    const insFixM = num(s.insMehdi);
+    const insFixMe = num(s.insMeriem);
+    const insRateM = num(s.principal) > 0 ? insFixM / num(s.principal) : 0;
+    const insRateMe = num(s.principal) > 0 ? insFixMe / num(s.principal) : 0;
+    const sorted = sortedPreps(preps);
+    let pi = 0;
+    const rows = [];
+    const events = [];
+    const offAmt = num(s.officialCRDAmount);
+    const offDate = s.officialCRDDate;
+    let offApplied = !(offAmt > 0 && offDate);
+    let paymentsMade = 0;
+    const applyPrep = (p, atLabel) => {
+      const before = bal;
+      const amt = Math.min(num(p.amount), bal);
+      const oldPay = pay;
+      let remaining = Math.max(1, dur - paymentsMade);
+      if (r > 0 && oldPay > before * r) {
+        const nExact = Math.log(oldPay / (oldPay - before * r)) / Math.log(1 + r);
+        if (isFinite(nExact) && nExact > 0) remaining = Math.max(1, Math.round(nExact));
+      }
+      bal -= amt;
+      if (p.mode !== "reduce_duration") pay = annuity(bal, r, remaining);
       events.push({
-        type: "alerte",
-        date: due,
-        msg: "La mensualité ne couvre plus les intérêts : vérifiez les paramètres.",
+        type: "prep",
+        prepId: p.id,
+        date: p.date,
+        balBefore: before,
+        applied: amt,
+        balAfter: bal,
+        oldPay,
+        newPay: pay,
+        remaining,
+        mode: p.mode,
+        atLabel
       });
-      break;
-    }
-    if (capital > bal) capital = bal;
-    const insM = s.insuranceMode === "crd" ? bal * insRateM : insFixM;
-    const insMe = s.insuranceMode === "crd" ? bal * insRateMe : insFixMe;
-    bal -= capital;
-    paymentsMade = n;
-    rows.push({
-      n,
-      date: due,
-      payment: interest + capital,
-      interest,
-      capital,
-      insM,
-      insMe,
-      ins: insM + insMe,
-      total: interest + capital + insM + insMe,
-      balance: bal,
-    });
-    while (
-      pi < sorted.length &&
-      sorted[pi].date === due &&
-      sorted[pi].sameDayOrder !== "before"
-    ) {
-      applyPrep(sorted[pi], "appliqué après l'échéance du " + fmtDate(due));
-      pi++;
-    }
-  }
-  let totalInterest = 0;
-  let totalInsurance = 0;
-  for (const x of rows) {
-    totalInterest += x.interest;
-    totalInsurance += x.ins;
-  }
-  return {
-    ok: true,
-    rows,
-    events,
-    totalInterest,
-    totalInsurance,
-    lastDate: rows.length ? rows[rows.length - 1].date : null,
-  };
-}
-
-/* Impact de chaque remboursement anticipé (traités dans l'ordre des dates) */
-function prepImpacts(s, preps) {
-  const sorted = sortedPreps(preps);
-  return sorted.map((p, i) => {
-    const before = buildSchedule(s, sorted.slice(0, i));
-    const after = buildSchedule(s, sorted.slice(0, i + 1));
-    const ev = after.events.find((e) => e.type === "prep" && e.prepId === p.id);
-    const ins = num(s.insMehdi) + num(s.insMeriem);
-    return {
-      p,
-      ev,
-      ok: before.ok && after.ok,
-      interestSaved: before.ok && after.ok ? before.totalInterest - after.totalInterest : null,
-      oldEnd: before.lastDate,
-      newEnd: after.lastDate,
-      monthlySaving: ev ? ev.oldPay - ev.newPay : null,
-      insEstimate: ins,
     };
-  });
-}
-
-/* ————— Balance Mehdi / Meriem —————
-   paid  = trésorerie réellement sortie par chacun (compte commun réparti 50/50, sans double comptage)
-   owed  = part que chacun doit économiquement supporter (selon le mode choisi)
-   net Mehdi = paid Mehdi − owed Mehdi ; s'il est positif, Meriem doit compenser Mehdi. */
-function computeBalance(ops, preps, s) {
-  const insSum = num(s.insMehdi) + num(s.insMeriem);
-  const rInsM = insSum > 0 ? num(s.insMehdi) / insSum : 0.5;
-  let paidM = 0, paidMe = 0, owedM = 0, owedMe = 0;
-  let cashM = 0, cashMe = 0, capM = 0, capMe = 0, sunkM = 0, sunkMe = 0;
-  let prepTotM = 0, prepTotMe = 0;
-  const items = [];
-
-  for (const o of ops) {
-    const pm = num(o.paidMehdi) + num(o.paidJoint) / 2;
-    const pme = num(o.paidMeriem) + num(o.paidJoint) / 2;
-    let om = num(o.shareMehdi);
-    let ome = num(o.shareMeriem);
-    const ins = num(o.insurance);
-    if (s.costMode === "individual" && ins > 0) {
-      const base = om + ome;
-      const fM = base !== 0 ? om / base : 0.5;
-      const nonIns = base - ins;
-      om = fM * nonIns + ins * rInsM;
-      ome = (1 - fM) * nonIns + ins * (1 - rInsM);
+    for (let n = 1; n <= 720 && bal > EPS; n++) {
+      const due = addMonthsISO(first, n - 1);
+      while (pi < sorted.length && (sorted[pi].date < due || sorted[pi].date === due && sorted[pi].sameDayOrder === "before")) {
+        applyPrep(sorted[pi], "appliqu\xE9 avant l'\xE9ch\xE9ance du " + fmtDate(due));
+        pi++;
+      }
+      if (!offApplied && due >= offDate) {
+        events.push({ type: "recalage", date: due, balBefore: bal, balAfter: offAmt });
+        bal = offAmt;
+        offApplied = true;
+      }
+      if (bal <= EPS) break;
+      const interest = bal * r;
+      let capital = pay - interest;
+      if (capital <= 0) {
+        events.push({
+          type: "alerte",
+          date: due,
+          msg: "La mensualit\xE9 ne couvre plus les int\xE9r\xEAts : v\xE9rifiez les param\xE8tres."
+        });
+        break;
+      }
+      if (capital > bal) capital = bal;
+      const insM = s.insuranceMode === "crd" ? bal * insRateM : insFixM;
+      const insMe = s.insuranceMode === "crd" ? bal * insRateMe : insFixMe;
+      bal -= capital;
+      paymentsMade = n;
+      rows.push({
+        n,
+        date: due,
+        payment: interest + capital,
+        interest,
+        capital,
+        insM,
+        insMe,
+        ins: insM + insMe,
+        total: interest + capital + insM + insMe,
+        balance: bal
+      });
+      while (pi < sorted.length && sorted[pi].date === due && sorted[pi].sameDayOrder !== "before") {
+        applyPrep(sorted[pi], "appliqu\xE9 apr\xE8s l'\xE9ch\xE9ance du " + fmtDate(due));
+        pi++;
+      }
     }
-    paidM += pm;
-    paidMe += pme;
-    owedM += om;
-    owedMe += ome;
-    const capital = num(o.capital);
-    const sunk = num(o.interest) + num(o.insurance) + num(o.fees);
-    const tot = pm + pme;
-    const fPm = tot !== 0 ? pm / tot : 0.5;
-    cashM += pm;
-    cashMe += pme;
-    capM += capital * fPm;
-    capMe += capital * (1 - fPm);
-    sunkM += sunk * fPm;
-    sunkMe += sunk * (1 - fPm);
-    items.push({ date: o.date, pm, pme });
-  }
-
-  for (const p of preps) {
-    const amt = num(p.amount);
-    const fee = num(p.fees);
-    const pm = p.paidBy === "Mehdi" ? amt + fee : 0;
-    const pme = p.paidBy === "Meriem" ? amt + fee : 0;
-    paidM += pm;
-    paidMe += pme;
-    owedM += (amt + fee) / 2;
-    owedMe += (amt + fee) / 2;
-    cashM += pm;
-    cashMe += pme;
-    if (p.paidBy === "Mehdi") {
-      prepTotM += amt;
-      capM += amt;
-      sunkM += fee;
-    } else {
-      prepTotMe += amt;
-      capMe += amt;
-      sunkMe += fee;
+    let totalInterest = 0;
+    let totalInsurance = 0;
+    for (const x of rows) {
+      totalInterest += x.interest;
+      totalInsurance += x.ins;
     }
-    items.push({ date: p.date, pm, pme });
+    return {
+      ok: true,
+      rows,
+      events,
+      totalInterest,
+      totalInsurance,
+      lastDate: rows.length ? rows[rows.length - 1].date : null
+    };
   }
-
-  const netM = paidM - owedM; // > 0 → Meriem doit compenser Mehdi
-  return {
-    paidM, paidMe, owedM, owedMe, netM,
-    targetEach: (paidM + paidMe) / 2,
-    gap: paidM - paidMe,
-    cashM, cashMe, capM, capMe, sunkM, sunkMe,
-    prepTotM, prepTotMe,
-    items,
-  };
-}
-
-/* ————— Styles ————— */
-const STYLES = `
+  function prepImpacts(s, preps) {
+    const sorted = sortedPreps(preps);
+    return sorted.map((p, i) => {
+      const before = buildSchedule(s, sorted.slice(0, i));
+      const after = buildSchedule(s, sorted.slice(0, i + 1));
+      const ev = after.events.find((e) => e.type === "prep" && e.prepId === p.id);
+      const ins = num(s.insMehdi) + num(s.insMeriem);
+      return {
+        p,
+        ev,
+        ok: before.ok && after.ok,
+        interestSaved: before.ok && after.ok ? before.totalInterest - after.totalInterest : null,
+        oldEnd: before.lastDate,
+        newEnd: after.lastDate,
+        monthlySaving: ev ? ev.oldPay - ev.newPay : null,
+        insEstimate: ins
+      };
+    });
+  }
+  function computeBalance(ops, preps, s) {
+    const insSum = num(s.insMehdi) + num(s.insMeriem);
+    const rInsM = insSum > 0 ? num(s.insMehdi) / insSum : 0.5;
+    let paidM = 0, paidMe = 0, owedM = 0, owedMe = 0;
+    let cashM = 0, cashMe = 0, capM = 0, capMe = 0, sunkM = 0, sunkMe = 0;
+    let prepTotM = 0, prepTotMe = 0;
+    const items = [];
+    for (const o of ops) {
+      const pm = num(o.paidMehdi) + num(o.paidJoint) / 2;
+      const pme = num(o.paidMeriem) + num(o.paidJoint) / 2;
+      let om = num(o.shareMehdi);
+      let ome = num(o.shareMeriem);
+      const ins = num(o.insurance);
+      if (s.costMode === "individual" && ins > 0) {
+        const base = om + ome;
+        const fM = base !== 0 ? om / base : 0.5;
+        const nonIns = base - ins;
+        om = fM * nonIns + ins * rInsM;
+        ome = (1 - fM) * nonIns + ins * (1 - rInsM);
+      }
+      paidM += pm;
+      paidMe += pme;
+      owedM += om;
+      owedMe += ome;
+      const capital = num(o.capital);
+      const sunk = num(o.interest) + num(o.insurance) + num(o.fees);
+      const tot = pm + pme;
+      const fPm = tot !== 0 ? pm / tot : 0.5;
+      cashM += pm;
+      cashMe += pme;
+      capM += capital * fPm;
+      capMe += capital * (1 - fPm);
+      sunkM += sunk * fPm;
+      sunkMe += sunk * (1 - fPm);
+      items.push({ date: o.date, pm, pme });
+    }
+    for (const p of preps) {
+      const amt = num(p.amount);
+      const fee = num(p.fees);
+      const pm = p.paidBy === "Mehdi" ? amt + fee : 0;
+      const pme = p.paidBy === "Meriem" ? amt + fee : 0;
+      paidM += pm;
+      paidMe += pme;
+      owedM += (amt + fee) / 2;
+      owedMe += (amt + fee) / 2;
+      cashM += pm;
+      cashMe += pme;
+      if (p.paidBy === "Mehdi") {
+        prepTotM += amt;
+        capM += amt;
+        sunkM += fee;
+      } else {
+        prepTotMe += amt;
+        capMe += amt;
+        sunkMe += fee;
+      }
+      items.push({ date: p.date, pm, pme });
+    }
+    const netM = paidM - owedM;
+    return {
+      paidM,
+      paidMe,
+      owedM,
+      owedMe,
+      netM,
+      targetEach: (paidM + paidMe) / 2,
+      gap: paidM - paidMe,
+      cashM,
+      cashMe,
+      capM,
+      capMe,
+      sunkM,
+      sunkMe,
+      prepTotM,
+      prepTotMe,
+      items
+    };
+  }
+  const STYLES = `
 @import url('https://fonts.googleapis.com/css2?family=Archivo:wght@500;700;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
 :root{
   --paper:#EFF1EC; --surface:#FFFFFF; --ink:#20262C; --muted:#6A7178;
@@ -635,1011 +590,540 @@ table.ledger tr:hover td{background:#F7F8F4}
 .legend .sw{display:inline-block;width:11px;height:11px;border-radius:3px;margin-right:5px;vertical-align:-1px}
 @media(max-width:640px){.wrap{padding:14px 12px}.card{padding:13px 12px}}
 `;
-
-/* ————— Petits composants ————— */
-function KPI({ label, value, sub, tone }) {
-  return (
-    <div className={"kpi " + (tone || "")}>
-      <div className="lb">{label}</div>
-      <div className="vl amt">{value}</div>
-      {sub ? <div className="sub">{sub}</div> : null}
-    </div>
-  );
-}
-
-function Field({ label, children }) {
-  return (
-    <div className="field">
-      <label>{label}</label>
-      {children}
-    </div>
-  );
-}
-
-/* Graphique SVG : contributions cumulées */
-function ContribChart({ items }) {
-  const sorted = [...items].sort((a, b) =>
-    (a.date || "0000-00-00") < (b.date || "0000-00-00") ? -1 : 1
-  );
-  let cm = 0, cme = 0;
-  const pts = [{ cm: 0, cme: 0, date: null }];
-  sorted.forEach((it) => {
-    cm += it.pm;
-    cme += it.pme;
-    pts.push({ cm, cme, date: it.date });
-  });
-  if (pts.length < 2)
-    return <p className="note">Aucune opération datée à représenter pour l'instant.</p>;
-  const W = 780, H = 250, P = 42;
-  const max = Math.max(1, ...pts.map((p) => Math.max(p.cm, p.cme)));
-  const x = (i) => P + (i * (W - 2 * P)) / Math.max(1, pts.length - 1);
-  const y = (v) => H - P - (v * (H - 2 * P)) / max;
-  const path = (k) =>
-    pts.map((p, i) => (i ? "L" : "M") + x(i).toFixed(1) + "," + y(p[k]).toFixed(1)).join(" ");
-  const firstDated = sorted.find((s) => s.date);
-  const lastDated = [...sorted].reverse().find((s) => s.date);
-  return (
-    <div>
-      <svg viewBox={"0 0 " + W + " " + H} style={{ width: "100%", height: "auto" }} role="img"
-        aria-label="Évolution cumulée des contributions de Mehdi et de Meriem">
-        <line x1={P} y1={H - P} x2={W - P} y2={H - P} stroke="var(--line)" />
-        <line x1={P} y1={P} x2={P} y2={H - P} stroke="var(--line)" />
-        <text x={P - 6} y={y(max) + 4} textAnchor="end" fontSize="11" fill="var(--muted)" fontFamily="IBM Plex Mono">
-          {fmt(max)}
-        </text>
-        <text x={P - 6} y={H - P + 4} textAnchor="end" fontSize="11" fill="var(--muted)" fontFamily="IBM Plex Mono">0</text>
-        <path d={path("cm")} fill="none" stroke="var(--mehdi)" strokeWidth="2.5" />
-        <path d={path("cme")} fill="none" stroke="var(--meriem)" strokeWidth="2.5" strokeDasharray="1 0" />
-        {pts.map((p, i) => (
-          <g key={i}>
-            <circle cx={x(i)} cy={y(p.cm)} r="3" fill="var(--mehdi)" />
-            <circle cx={x(i)} cy={y(p.cme)} r="3" fill="var(--meriem)" />
-          </g>
-        ))}
-        <text x={P} y={H - P + 18} fontSize="11" fill="var(--muted)">
-          {firstDated ? fmtDate(firstDated.date) : "opérations initiales"}
-        </text>
-        <text x={W - P} y={H - P + 18} textAnchor="end" fontSize="11" fill="var(--muted)">
-          {lastDated ? fmtDate(lastDated.date) : ""}
-        </text>
-      </svg>
-      <div className="legend">
-        <span><span className="sw" style={{ background: "var(--mehdi)" }}></span>Mehdi (cumul payé)</span>
-        <span><span className="sw" style={{ background: "var(--meriem)" }}></span>Meriem (cumul payé)</span>
-        <span className="note">Les opérations sans date sont placées au départ de la courbe.</span>
-      </div>
-    </div>
-  );
-}
-
-/* ————— Formulaire d'opération ————— */
-const EMPTY_OP_FORM = {
-  date: "", category: "Autre dépense commune", label: "", total: "",
-  payer: "joint", paidMehdi: "", paidMeriem: "", paidJoint: "",
-  shareMehdi: "", shareMeriem: "", capital: "", interest: "", insurance: "", fees: "",
-  notes: "", adjFrom: "Mehdi",
-};
-
-function opToForm(o) {
-  const t = num(o.total);
-  let payer = "custom";
-  if (Math.abs(num(o.paidJoint) - t) < EPS && num(o.paidMehdi) === 0 && num(o.paidMeriem) === 0) payer = "joint";
-  else if (Math.abs(num(o.paidMehdi) - t) < EPS && num(o.paidMeriem) === 0 && num(o.paidJoint) === 0) payer = "mehdi";
-  else if (Math.abs(num(o.paidMeriem) - t) < EPS && num(o.paidMehdi) === 0 && num(o.paidJoint) === 0) payer = "meriem";
-  return {
-    date: o.date || "", category: o.category, label: o.label || "", total: String(o.total ?? ""),
-    payer, paidMehdi: String(o.paidMehdi ?? ""), paidMeriem: String(o.paidMeriem ?? ""),
-    paidJoint: String(o.paidJoint ?? ""), shareMehdi: String(o.shareMehdi ?? ""),
-    shareMeriem: String(o.shareMeriem ?? ""), capital: String(o.capital ?? ""),
-    interest: String(o.interest ?? ""), insurance: String(o.insurance ?? ""),
-    fees: String(o.fees ?? ""), notes: o.notes || "",
-    adjFrom: num(o.paidMehdi) >= 0 ? "Mehdi" : "Meriem",
-  };
-}
-
-function formToOp(f, id) {
-  const t = num(f.total);
-  const isAdj = f.category === "Ajustement entre Mehdi et Meriem";
-  let paidMehdi = 0, paidMeriem = 0, paidJoint = 0, shareMehdi = 0, shareMeriem = 0;
-  if (isAdj) {
-    paidMehdi = f.adjFrom === "Mehdi" ? t : -t;
-    paidMeriem = f.adjFrom === "Meriem" ? t : -t;
-    shareMehdi = 0; shareMeriem = 0;
-  } else {
-    if (f.payer === "mehdi") paidMehdi = t;
-    else if (f.payer === "meriem") paidMeriem = t;
-    else if (f.payer === "joint") paidJoint = t;
-    else { paidMehdi = num(f.paidMehdi); paidMeriem = num(f.paidMeriem); paidJoint = num(f.paidJoint); }
-    if (f.payer === "custom" && (f.shareMehdi !== "" || f.shareMeriem !== "")) {
-      shareMehdi = num(f.shareMehdi); shareMeriem = num(f.shareMeriem);
-    } else { shareMehdi = t / 2; shareMeriem = t / 2; }
+  function KPI({ label, value, sub, tone }) {
+    return /* @__PURE__ */ React.createElement("div", { className: "kpi " + (tone || "") }, /* @__PURE__ */ React.createElement("div", { className: "lb" }, label), /* @__PURE__ */ React.createElement("div", { className: "vl amt" }, value), sub ? /* @__PURE__ */ React.createElement("div", { className: "sub" }, sub) : null);
   }
-  return {
-    id: id || uid(), date: f.date, category: f.category, label: f.label.trim(),
-    total: t, paidMehdi, paidMeriem, paidJoint, shareMehdi, shareMeriem,
-    capital: num(f.capital), interest: num(f.interest), insurance: num(f.insurance),
-    fees: num(f.fees), notes: f.notes.trim(),
+  function Field({ label, children }) {
+    return /* @__PURE__ */ React.createElement("div", { className: "field" }, /* @__PURE__ */ React.createElement("label", null, label), children);
+  }
+  function ContribChart({ items }) {
+    const sorted = [...items].sort(
+      (a, b) => (a.date || "0000-00-00") < (b.date || "0000-00-00") ? -1 : 1
+    );
+    let cm = 0, cme = 0;
+    const pts = [{ cm: 0, cme: 0, date: null }];
+    sorted.forEach((it) => {
+      cm += it.pm;
+      cme += it.pme;
+      pts.push({ cm, cme, date: it.date });
+    });
+    if (pts.length < 2)
+      return /* @__PURE__ */ React.createElement("p", { className: "note" }, "Aucune op\xE9ration dat\xE9e \xE0 repr\xE9senter pour l'instant.");
+    const W = 780, H = 250, P = 42;
+    const max = Math.max(1, ...pts.map((p) => Math.max(p.cm, p.cme)));
+    const x = (i) => P + i * (W - 2 * P) / Math.max(1, pts.length - 1);
+    const y = (v) => H - P - v * (H - 2 * P) / max;
+    const path = (k) => pts.map((p, i) => (i ? "L" : "M") + x(i).toFixed(1) + "," + y(p[k]).toFixed(1)).join(" ");
+    const firstDated = sorted.find((s) => s.date);
+    const lastDated = [...sorted].reverse().find((s) => s.date);
+    return /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement(
+      "svg",
+      {
+        viewBox: "0 0 " + W + " " + H,
+        style: { width: "100%", height: "auto" },
+        role: "img",
+        "aria-label": "\xC9volution cumul\xE9e des contributions de Mehdi et de Meriem"
+      },
+      /* @__PURE__ */ React.createElement("line", { x1: P, y1: H - P, x2: W - P, y2: H - P, stroke: "var(--line)" }),
+      /* @__PURE__ */ React.createElement("line", { x1: P, y1: P, x2: P, y2: H - P, stroke: "var(--line)" }),
+      /* @__PURE__ */ React.createElement("text", { x: P - 6, y: y(max) + 4, textAnchor: "end", fontSize: "11", fill: "var(--muted)", fontFamily: "IBM Plex Mono" }, fmt(max)),
+      /* @__PURE__ */ React.createElement("text", { x: P - 6, y: H - P + 4, textAnchor: "end", fontSize: "11", fill: "var(--muted)", fontFamily: "IBM Plex Mono" }, "0"),
+      /* @__PURE__ */ React.createElement("path", { d: path("cm"), fill: "none", stroke: "var(--mehdi)", strokeWidth: "2.5" }),
+      /* @__PURE__ */ React.createElement("path", { d: path("cme"), fill: "none", stroke: "var(--meriem)", strokeWidth: "2.5", strokeDasharray: "1 0" }),
+      pts.map((p, i) => /* @__PURE__ */ React.createElement("g", { key: i }, /* @__PURE__ */ React.createElement("circle", { cx: x(i), cy: y(p.cm), r: "3", fill: "var(--mehdi)" }), /* @__PURE__ */ React.createElement("circle", { cx: x(i), cy: y(p.cme), r: "3", fill: "var(--meriem)" }))),
+      /* @__PURE__ */ React.createElement("text", { x: P, y: H - P + 18, fontSize: "11", fill: "var(--muted)" }, firstDated ? fmtDate(firstDated.date) : "op\xE9rations initiales"),
+      /* @__PURE__ */ React.createElement("text", { x: W - P, y: H - P + 18, textAnchor: "end", fontSize: "11", fill: "var(--muted)" }, lastDated ? fmtDate(lastDated.date) : "")
+    ), /* @__PURE__ */ React.createElement("div", { className: "legend" }, /* @__PURE__ */ React.createElement("span", null, /* @__PURE__ */ React.createElement("span", { className: "sw", style: { background: "var(--mehdi)" } }), "Mehdi (cumul pay\xE9)"), /* @__PURE__ */ React.createElement("span", null, /* @__PURE__ */ React.createElement("span", { className: "sw", style: { background: "var(--meriem)" } }), "Meriem (cumul pay\xE9)"), /* @__PURE__ */ React.createElement("span", { className: "note" }, "Les op\xE9rations sans date sont plac\xE9es au d\xE9part de la courbe.")));
+  }
+  const EMPTY_OP_FORM = {
+    date: "",
+    category: "Autre d\xE9pense commune",
+    label: "",
+    total: "",
+    payer: "joint",
+    paidMehdi: "",
+    paidMeriem: "",
+    paidJoint: "",
+    shareMehdi: "",
+    shareMeriem: "",
+    capital: "",
+    interest: "",
+    insurance: "",
+    fees: "",
+    notes: "",
+    adjFrom: "Mehdi"
   };
-}
-
-function OperationForm({ initial, settings, onSave, onCancel, title }) {
-  const [f, setF] = useState(initial);
-  const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
-  const isAdj = f.category === "Ajustement entre Mehdi et Meriem";
-  const isMens = f.category === "Mensualité de prêt";
-  const isRefund = f.category === "Remboursement Crédit Logement reçu";
-  const t = num(f.total);
-  const paidSum = f.payer === "custom" ? num(f.paidMehdi) + num(f.paidMeriem) + num(f.paidJoint) : t;
-  const detailSum = num(f.capital) + num(f.interest) + num(f.insurance) + num(f.fees);
-  return (
-    <div className="card" style={{ borderColor: "var(--ink)" }}>
-      <h2>{title}</h2>
-      <div className="frow">
-        <Field label="Date">
-          <input type="date" value={f.date} onChange={set("date")} />
-        </Field>
-        <Field label="Catégorie">
-          <select value={f.category} onChange={set("category")}>
-            {CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
-          </select>
-        </Field>
-        <Field label="Libellé">
-          <input value={f.label} onChange={set("label")} placeholder="Ex. : mensualité de juillet" />
-        </Field>
-        <Field label={isAdj ? "Montant du versement (€)" : "Montant total (€)"}>
-          <input inputMode="decimal" value={f.total} onChange={set("total")} placeholder="0,00" />
-        </Field>
-      </div>
-      {isAdj ? (
-        <div className="frow">
-          <Field label="Versé par">
-            <select value={f.adjFrom} onChange={set("adjFrom")}>
-              <option>Mehdi</option><option>Meriem</option>
-            </select>
-          </Field>
-          <div className="note" style={{ alignSelf: "end" }}>
-            Un ajustement transfère de l'argent entre vous : il rapproche la balance de 0 sans être une dépense commune.
-          </div>
-        </div>
-      ) : (
-        <div className="frow">
-          <Field label="Payé par">
-            <select value={f.payer} onChange={set("payer")}>
-              <option value="mehdi">Mehdi</option>
-              <option value="meriem">Meriem</option>
-              <option value="joint">Compte commun (réparti 50/50)</option>
-              <option value="custom">Répartition personnalisée</option>
-            </select>
-          </Field>
-          {f.payer === "custom" && (
-            <>
-              <Field label="Payé par Mehdi (€)"><input inputMode="decimal" value={f.paidMehdi} onChange={set("paidMehdi")} /></Field>
-              <Field label="Payé par Meriem (€)"><input inputMode="decimal" value={f.paidMeriem} onChange={set("paidMeriem")} /></Field>
-              <Field label="Payé depuis le compte commun (€)"><input inputMode="decimal" value={f.paidJoint} onChange={set("paidJoint")} /></Field>
-              <Field label="Part imputée à Mehdi (€)"><input inputMode="decimal" value={f.shareMehdi} onChange={set("shareMehdi")} placeholder={t ? String(t / 2) : ""} /></Field>
-              <Field label="Part imputée à Meriem (€)"><input inputMode="decimal" value={f.shareMeriem} onChange={set("shareMeriem")} placeholder={t ? String(t / 2) : ""} /></Field>
-            </>
-          )}
-        </div>
-      )}
-      {!isAdj && (
-        <div className="frow">
-          <Field label="Part capital (€)"><input inputMode="decimal" value={f.capital} onChange={set("capital")} /></Field>
-          <Field label="Part intérêts (€)"><input inputMode="decimal" value={f.interest} onChange={set("interest")} /></Field>
-          <Field label="Part assurance (€)">
-            <input inputMode="decimal" value={f.insurance} onChange={set("insurance")}
-              placeholder={isMens ? String(num(settings.insMehdi) + num(settings.insMeriem)) : ""} />
-          </Field>
-          <Field label="Part frais (€)"><input inputMode="decimal" value={f.fees} onChange={set("fees")} /></Field>
-        </div>
-      )}
-      <div className="frow">
-        <Field label="Notes"><textarea rows={2} value={f.notes} onChange={set("notes")} /></Field>
-      </div>
-      {isMens && (
-        <p className="note">Astuce : reportez les parts capital / intérêts / assurance du tableau d'amortissement pour cette échéance. L'assurance est utilisée par le mode « assurance individualisée ».</p>
-      )}
-      {isRefund && (
-        <p className="note">Restitution reçue : saisissez des montants négatifs (ex. −1 500 payé par le compte commun) pour que la balance et les coûts non récupérables diminuent.</p>
-      )}
-      {f.payer === "custom" && Math.abs(paidSum - t) > EPS && !isAdj && (
-        <div className="warnbox">La somme des paiements ({fmt(paidSum)}) ne correspond pas au montant total ({fmt(t)}). Vérifiez avant d'enregistrer.</div>
-      )}
-      {detailSum > 0 && Math.abs(detailSum - Math.abs(t)) > EPS && !isAdj && (
-        <div className="warnbox">Le détail capital + intérêts + assurance + frais ({fmt(detailSum)}) diffère du total ({fmt(t)}). C'est autorisé, mais vérifiez.</div>
-      )}
-      <div style={{ display: "flex", gap: 8 }}>
-        <button className="btn btn-primary" onClick={() => onSave(f)}>Enregistrer l'opération</button>
-        <button className="btn" onClick={onCancel}>Annuler</button>
-      </div>
-    </div>
-  );
-}
-
-/* ————— Formulaire de remboursement anticipé ————— */
-const EMPTY_PREP_FORM = {
-  date: "", amount: "", paidBy: "Mehdi", fees: "",
-  mode: "reduce_payment", sameDayOrder: "after", notes: "",
-};
-
-function PrepForm({ initial, onSave, onCancel, title }) {
-  const [f, setF] = useState(initial);
-  const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
-  return (
-    <div className="card" style={{ borderColor: "var(--gold)" }}>
-      <h2>{title}</h2>
-      <div className="frow">
-        <Field label="Date du remboursement"><input type="date" value={f.date} onChange={set("date")} /></Field>
-        <Field label="Montant (€)"><input inputMode="decimal" value={f.amount} onChange={set("amount")} placeholder="0,00" /></Field>
-        <Field label="Payé par">
-          <select value={f.paidBy} onChange={set("paidBy")}><option>Mehdi</option><option>Meriem</option></select>
-        </Field>
-        <Field label="Frais / indemnité bancaire (€)"><input inputMode="decimal" value={f.fees} onChange={set("fees")} placeholder="0,00" /></Field>
-      </div>
-      <div className="frow">
-        <Field label="Traitement du remboursement">
-          <select value={f.mode} onChange={set("mode")}>
-            <option value="reduce_payment">Diminuer la mensualité en conservant la durée restante (défaut)</option>
-            <option value="reduce_duration">Conserver la mensualité et réduire la durée restante</option>
-          </select>
-        </Field>
-        <Field label="Si même jour qu'une échéance">
-          <select value={f.sameDayOrder} onChange={set("sameDayOrder")}>
-            <option value="after">Échéance d'abord, puis remboursement (défaut)</option>
-            <option value="before">Remboursement d'abord, puis échéance</option>
-          </select>
-        </Field>
-        <Field label="Notes"><input value={f.notes} onChange={set("notes")} /></Field>
-      </div>
-      <p className="note">
-        Le montant diminue le capital restant dû. Les frais sont un coût supporté par le payeur
-        (partagé 50/50 dans la balance) mais ne réduisent pas le capital.
-      </p>
-      <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-        <button className="btn btn-gold" onClick={() => onSave(f)}>Enregistrer le remboursement anticipé</button>
-        <button className="btn" onClick={onCancel}>Annuler</button>
-      </div>
-    </div>
-  );
-}
-
-/* ————— Application ————— */
-const TABS = [
-  "Tableau de bord", "Crédit & paramètres", "Amortissement mensuel", "Registre des paiements",
-  "Remboursements anticipés", "Balance Mehdi / Meriem", "Historique", "Export / import",
-];
-
-function App() {
-  const [data, setData] = useState(freshData);
-  const [loaded, setLoaded] = useState(false);
-  const [saveState, setSaveState] = useState("…");
-  const [tab, setTab] = useState(TABS[0]);
-  const [opForm, setOpForm] = useState(null); // {id?|null, form}
-  const [prepForm, setPrepForm] = useState(null);
-  const [lastPrepId, setLastPrepId] = useState(null);
-  const [flt, setFlt] = useState({ cat: "", who: "", q: "", sort: "date-asc" });
-  const [importMsg, setImportMsg] = useState("");
-
-  const { settings, ops, preps, history } = data;
-  const applyingRemote = React.useRef(false);
-  const localWrite = React.useRef(false);
-
-  /* Chargement + synchronisation temps réel depuis Firebase */
-  useEffect(() => {
-    let unsub = null;
-    (async () => {
-      try {
-        // attend que la couche Firebase (window.cloudDb) soit prête
-        let tries = 0;
-        while (!window.cloudDb && tries < 50) { await new Promise(r => setTimeout(r, 100)); tries++; }
-        if (!window.cloudDb) { setSaveState("Hors ligne — cloud indisponible"); setLoaded(true); return; }
-        // écoute en direct : toute modif (par vous ou Meriem) arrive ici
-        unsub = window.cloudDb.listen((d) => {
-          if (d && d.settings && Array.isArray(d.ops)) {
-            d.settings = { ...DEFAULT_SETTINGS, ...d.settings, caution: 6813.38 };
-            d.preps = Array.isArray(d.preps) ? d.preps : [];
-            d.history = Array.isArray(d.history) ? d.history : [];
-            applyingRemote.current = true;
-            setData(d);
-            setSaveState("Synchronisé");
-          }
-        }, async (exists) => {
-          // première connexion : si le cloud est vide, on y pousse les données préchargées
-          if (!exists) {
-            try { await window.cloudDb.save(freshData()); } catch (e) {}
-          }
-          setLoaded(true);
-        });
-      } catch (e) {
-        setSaveState("Hors ligne — cloud indisponible");
-        setLoaded(true);
+  function opToForm(o) {
+    const t = num(o.total);
+    let payer = "custom";
+    if (Math.abs(num(o.paidJoint) - t) < EPS && num(o.paidMehdi) === 0 && num(o.paidMeriem) === 0) payer = "joint";
+    else if (Math.abs(num(o.paidMehdi) - t) < EPS && num(o.paidMeriem) === 0 && num(o.paidJoint) === 0) payer = "mehdi";
+    else if (Math.abs(num(o.paidMeriem) - t) < EPS && num(o.paidMehdi) === 0 && num(o.paidJoint) === 0) payer = "meriem";
+    return {
+      date: o.date || "",
+      category: o.category,
+      label: o.label || "",
+      total: String(o.total ?? ""),
+      payer,
+      paidMehdi: String(o.paidMehdi ?? ""),
+      paidMeriem: String(o.paidMeriem ?? ""),
+      paidJoint: String(o.paidJoint ?? ""),
+      shareMehdi: String(o.shareMehdi ?? ""),
+      shareMeriem: String(o.shareMeriem ?? ""),
+      capital: String(o.capital ?? ""),
+      interest: String(o.interest ?? ""),
+      insurance: String(o.insurance ?? ""),
+      fees: String(o.fees ?? ""),
+      notes: o.notes || "",
+      adjFrom: num(o.paidMehdi) >= 0 ? "Mehdi" : "Meriem"
+    };
+  }
+  function formToOp(f, id) {
+    const t = num(f.total);
+    const isAdj = f.category === "Ajustement entre Mehdi et Meriem";
+    let paidMehdi = 0, paidMeriem = 0, paidJoint = 0, shareMehdi = 0, shareMeriem = 0;
+    if (isAdj) {
+      paidMehdi = f.adjFrom === "Mehdi" ? t : -t;
+      paidMeriem = f.adjFrom === "Meriem" ? t : -t;
+      shareMehdi = 0;
+      shareMeriem = 0;
+    } else {
+      if (f.payer === "mehdi") paidMehdi = t;
+      else if (f.payer === "meriem") paidMeriem = t;
+      else if (f.payer === "joint") paidJoint = t;
+      else {
+        paidMehdi = num(f.paidMehdi);
+        paidMeriem = num(f.paidMeriem);
+        paidJoint = num(f.paidJoint);
       }
-    })();
-    return () => { if (unsub) unsub(); };
-  }, []);
-
-  /* Sauvegarde automatique vers Firebase */
-  useEffect(() => {
-    if (!loaded) return;
-    if (applyingRemote.current) { applyingRemote.current = false; return; } // évite de réécrire ce qu'on vient de recevoir
-    if (!window.cloudDb) return;
-    setSaveState("Enregistrement…");
-    const t = setTimeout(async () => {
-      try {
-        await window.cloudDb.save(data);
-        setSaveState("Synchronisé");
-      } catch (e) {
-        setSaveState("Échec de synchro — réessayez");
+      if (f.payer === "custom" && (f.shareMehdi !== "" || f.shareMeriem !== "")) {
+        shareMehdi = num(f.shareMehdi);
+        shareMeriem = num(f.shareMeriem);
+      } else {
+        shareMehdi = t / 2;
+        shareMeriem = t / 2;
       }
-    }, 600);
-    return () => clearTimeout(t);
-  }, [data, loaded]);
-
-  const log = (action) => (d) => ({
-    ...d, history: [...d.history, { ts: new Date().toISOString(), action }].slice(-300),
-  });
-  const mutate = (fn, action) => setData((d) => log(action)(fn(d)));
-
-  /* Calculs */
-  const schedule = useMemo(() => buildSchedule(settings, preps), [settings, preps]);
-  const impacts = useMemo(() => prepImpacts(settings, preps), [settings, preps]);
-  const bal = useMemo(() => computeBalance(ops, preps, settings), [ops, preps, settings]);
-
-  const today = todayISO();
-  const paidRows = schedule.ok ? schedule.rows.filter((r) => r.date <= today) : [];
-  const lastPaid = paidRows.length ? paidRows[paidRows.length - 1] : null;
-  const prePaidBeforeStart = sortedPreps(preps)
-    .filter((p) => p.date <= today && (!schedule.rows.length || p.date < schedule.rows[0].date))
-    .reduce((a, p) => a + num(p.amount), 0);
-  const crdNow = schedule.ok
-    ? (lastPaid ? lastPaid.balance : Math.max(0, num(settings.principal) - prePaidBeforeStart))
-    : null;
-  const currentRow = schedule.ok
-    ? schedule.rows.find((r) => r.date >= today) || lastPaid
-    : null;
-  const currentPayTotal = currentRow ? currentRow.payment + currentRow.ins : null;
-  const payChanged = schedule.events.some((e) => e.type === "prep" && Math.abs(e.newPay - e.oldPay) > EPS);
-
-  const verdictTone = Math.abs(bal.netM) <= EPS ? "eq" : bal.netM > 0 ? "m" : "me";
-  const verdictText =
-    Math.abs(bal.netM) <= EPS
-      ? "Équilibre parfait : personne ne doit rien à l'autre."
-      : bal.netM > 0
-        ? "Meriem doit compenser Mehdi de " + fmt(bal.netM) + "."
-        : "Mehdi doit compenser Meriem de " + fmt(-bal.netM) + ".";
-
-  /* Registre : opérations + remboursements anticipés (lignes virtuelles) */
-  const registryRows = useMemo(() => {
-    const fromOps = ops.map((o) => ({ ...o, src: "op" }));
-    const fromPreps = preps.map((p) => ({
-      id: p.id, src: "prep", date: p.date,
-      category: "Remboursement anticipé",
-      label: "Remboursement anticipé" + (num(p.fees) > 0 ? " + frais " + fmt(num(p.fees)) : ""),
-      total: num(p.amount) + num(p.fees),
-      paidMehdi: p.paidBy === "Mehdi" ? num(p.amount) + num(p.fees) : 0,
-      paidMeriem: p.paidBy === "Meriem" ? num(p.amount) + num(p.fees) : 0,
-      paidJoint: 0,
-      shareMehdi: (num(p.amount) + num(p.fees)) / 2,
-      shareMeriem: (num(p.amount) + num(p.fees)) / 2,
-      capital: num(p.amount), interest: 0, insurance: 0, fees: num(p.fees),
-      notes: (p.notes || "") + " — géré dans l'onglet Remboursements anticipés",
-    }));
-    let rows = [...fromOps, ...fromPreps];
-    if (flt.cat) rows = rows.filter((r) => r.category === flt.cat);
-    if (flt.who === "Mehdi") rows = rows.filter((r) => num(r.paidMehdi) !== 0);
-    if (flt.who === "Meriem") rows = rows.filter((r) => num(r.paidMeriem) !== 0);
-    if (flt.who === "Commun") rows = rows.filter((r) => num(r.paidJoint) !== 0);
-    if (flt.q) {
-      const q = flt.q.toLowerCase();
-      rows = rows.filter((r) => (r.label + " " + r.notes + " " + r.category).toLowerCase().includes(q));
     }
-    const dir = flt.sort.endsWith("desc") ? -1 : 1;
-    if (flt.sort.startsWith("date")) rows.sort((a, b) => ((a.date || "0000") < (b.date || "0000") ? -1 : 1) * dir);
-    else rows.sort((a, b) => (num(a.total) - num(b.total)) * dir);
-    return rows;
-  }, [ops, preps, flt]);
-
-  /* Actions */
-  const saveOp = (f) => {
-    const isNew = !opForm.id;
-    const op = formToOp(f, opForm.id);
-    mutate(
-      (d) => ({ ...d, ops: isNew ? [...d.ops, op] : d.ops.map((o) => (o.id === op.id ? op : o)) }),
-      (isNew ? "Ajout" : "Modification") + " d'une opération : " + (op.label || op.category) + " (" + fmt(op.total) + ")."
-    );
-    setOpForm(null);
-  };
-  const delOp = (o) => {
-    if (!window.confirm("Supprimer définitivement « " + (o.label || o.category) + " » ?")) return;
-    mutate((d) => ({ ...d, ops: d.ops.filter((x) => x.id !== o.id) }),
-      "Suppression d'une opération : " + (o.label || o.category) + " (" + fmt(num(o.total)) + ").");
-  };
-  const savePrep = (f) => {
-    const isNew = !prepForm.id;
-    const p = {
-      id: prepForm.id || uid(), date: f.date, amount: num(f.amount), paidBy: f.paidBy,
-      fees: num(f.fees), mode: f.mode, sameDayOrder: f.sameDayOrder, notes: f.notes.trim(),
+    return {
+      id: id || uid(),
+      date: f.date,
+      category: f.category,
+      label: f.label.trim(),
+      total: t,
+      paidMehdi,
+      paidMeriem,
+      paidJoint,
+      shareMehdi,
+      shareMeriem,
+      capital: num(f.capital),
+      interest: num(f.interest),
+      insurance: num(f.insurance),
+      fees: num(f.fees),
+      notes: f.notes.trim()
     };
-    if (!p.date || p.amount <= 0) { window.alert("Date et montant strictement positif requis."); return; }
-    mutate((d) => ({ ...d, preps: isNew ? [...d.preps, p] : d.preps.map((x) => (x.id === p.id ? p : x)) }),
-      (isNew ? "Ajout" : "Modification") + " d'un remboursement anticipé de " + fmt(p.amount) + " payé par " + p.paidBy + ".");
-    setLastPrepId(p.id);
-    setPrepForm(null);
-  };
-  const delPrep = (p) => {
-    if (!window.confirm("Supprimer ce remboursement anticipé de " + fmt(num(p.amount)) + " ?")) return;
-    mutate((d) => ({ ...d, preps: d.preps.filter((x) => x.id !== p.id) }),
-      "Suppression d'un remboursement anticipé de " + fmt(num(p.amount)) + ".");
-  };
-  const setSetting = (k) => (e) =>
-    setData((d) => ({ ...d, settings: { ...d.settings, [k]: e.target.value } }));
-  const commitSettings = (msg) => mutate((d) => d, msg || "Mise à jour des paramètres du crédit.");
-
-  /* Exports */
-  const exportJSON = () => {
-    downloadText("balance-credit-versailles-" + today + ".json", JSON.stringify(data, null, 2), "application/json");
-    mutate((d) => d, "Export JSON des données.");
-  };
-  const importJSON = (e) => {
-    const file = e.target.files && e.target.files[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      try {
-        const d = JSON.parse(reader.result);
-        if (!d || !d.settings || !Array.isArray(d.ops)) throw new Error("structure invalide");
-        d.settings = { ...DEFAULT_SETTINGS, ...d.settings, caution: 6813.38 };
-        d.preps = Array.isArray(d.preps) ? d.preps : [];
-        d.history = Array.isArray(d.history) ? d.history : [];
-        setData(log("Import JSON : données remplacées par le fichier « " + file.name + " ».")(d));
-        setImportMsg("Import réussi : " + d.ops.length + " opérations, " + d.preps.length + " remboursements anticipés.");
-      } catch (err) {
-        setImportMsg("Import impossible : le fichier n'est pas un export JSON valide de cette application.");
-      }
-    };
-    reader.readAsText(file);
-    e.target.value = "";
-  };
-  const exportRegistryCSV = () => {
-    const head = ["Date","Catégorie","Libellé","Montant total","Payé par Mehdi","Payé par Meriem","Payé compte commun","Part Mehdi","Part Meriem","Capital","Intérêts","Assurance","Frais","Notes"];
-    const lines = [head.join(";")];
-    registryRows.forEach((r) => lines.push([
-      csvCell(fmtDate(r.date)), csvCell(r.category), csvCell(r.label),
-      csvNum(r.total), csvNum(r.paidMehdi), csvNum(r.paidMeriem), csvNum(r.paidJoint),
-      csvNum(r.shareMehdi), csvNum(r.shareMeriem), csvNum(r.capital), csvNum(r.interest),
-      csvNum(r.insurance), csvNum(r.fees), csvCell(r.notes),
-    ].join(";")));
-    downloadText("registre-paiements-" + today + ".csv", lines.join("\n"), "text/csv;charset=utf-8");
-  };
-  const exportScheduleCSV = () => {
-    if (!schedule.ok) return;
-    const head = ["N°","Date","Mensualité hors assurance","Intérêts","Capital","Assurance Mehdi","Assurance Meriem","Assurance totale","Total","Capital restant dû"];
-    const lines = [head.join(";")];
-    schedule.rows.forEach((r) => lines.push([
-      r.n, csvCell(fmtDate(r.date)), csvNum(r.payment), csvNum(r.interest), csvNum(r.capital),
-      csvNum(r.insM), csvNum(r.insMe), csvNum(r.ins), csvNum(r.total), csvNum(r.balance),
-    ].join(";")));
-    downloadText("amortissement-" + today + ".csv", lines.join("\n"), "text/csv;charset=utf-8");
-  };
-  const resetAll = () => {
-    if (!window.confirm("Réinitialiser toutes les données aux valeurs préchargées ? ATTENTION : en mode cloud, cela remet à zéro les données partagées pour vous ET pour Meriem, sur tous les appareils. Pensez à exporter en JSON avant.")) return;
-    setData(log("Réinitialisation complète aux données préchargées.")(freshData()));
-  };
-
-  const addWorksRelease = () =>
-    mutate((d) => ({ ...d, settings: { ...d.settings, worksReleases: [...(d.settings.worksReleases || []), { id: uid(), date: "", amount: "", note: "" }] } }),
-      "Ajout d'une ligne de déblocage travaux.");
-  const setWorksRelease = (id, k) => (e) =>
-    setData((d) => ({ ...d, settings: { ...d.settings, worksReleases: d.settings.worksReleases.map((w) => (w.id === id ? { ...w, [k]: e.target.value } : w)) } }));
-  const delWorksRelease = (id) =>
-    mutate((d) => ({ ...d, settings: { ...d.settings, worksReleases: d.settings.worksReleases.filter((w) => w.id !== id) } }),
-      "Suppression d'une ligne de déblocage travaux.");
-
-  /* ————— Rendu des sections ————— */
-  const insSum = num(settings.insMehdi) + num(settings.insMeriem);
-  const worksReleasedTotal = (settings.worksReleases || []).reduce((a, w) => a + num(w.amount), 0);
-
-  const Verdict = () => {
-    const totalPaid = bal.paidM + bal.paidMe;
-    const pM = totalPaid > 0 ? (bal.paidM / totalPaid) * 100 : 50;
-    return (
-      <div className={"verdict " + verdictTone}>
-        <div>
-          <div className="big">{verdictText}</div>
-          <div className="note">
-            Mehdi a payé {fmt(bal.paidM)} · Meriem a payé {fmt(bal.paidMe)} · cible 50/50 : {fmt(bal.targetEach)} chacun
-            {settings.costMode === "individual" ? " (assurance imputée selon les montants réels)" : ""}.
-          </div>
-        </div>
-        <div className="beam">
-          <div className="bar">
-            <div className="m" style={{ width: pM + "%" }} />
-            <div className="me" style={{ width: (100 - pM) + "%" }} />
-          </div>
-          <div className="lbl"><span>Mehdi {pM.toFixed(1).replace(".", ",")} %</span><span>Meriem {(100 - pM).toFixed(1).replace(".", ",")} %</span></div>
-        </div>
-      </div>
-    );
-  };
-
-  const renderDashboard = () => (
-    <>
-      <Verdict />
-      {!schedule.ok && <div className="warnbox">{schedule.reason}</div>}
-      <div className="grid">
-        <KPI tone="m" label="Total réellement financé par Mehdi" value={fmt(bal.paidM)} sub={"dont remboursements anticipés : " + fmt(bal.prepTotM)} />
-        <KPI tone="me" label="Total réellement financé par Meriem" value={fmt(bal.paidMe)} sub={"dont remboursements anticipés : " + fmt(bal.prepTotMe)} />
-        <KPI label="Objectif théorique 50/50 (chacun)" value={fmt(bal.targetEach)} sub="moitié du total payé à deux" />
-        <KPI label="Écart actuel Mehdi − Meriem" value={fmt(bal.gap)} sub={Math.abs(bal.netM) <= EPS ? "aucune compensation nécessaire" : "compensation nécessaire : " + fmt(Math.abs(bal.netM))} />
-        <KPI label="Capital restant dû (estimation)" value={crdNow == null ? "—" : fmt(crdNow)}
-          sub={settings.officialCRDAmount && settings.officialCRDDate ? "recalé sur le montant officiel du " + fmtDate(settings.officialCRDDate) : "calcul théorique — le décompte Boursobank prévaut"} />
-        <KPI label="Mensualité actuelle, assurance comprise" value={currentPayTotal == null ? "—" : fmt(currentPayTotal)}
-          sub={currentRow ? (payChanged ? "estimation après remboursement(s) anticipé(s)" : "hors assurance : " + fmt(currentRow.payment)) : "en attente de la date de première échéance"} />
-        <KPI label="Date théorique de dernière échéance" value={schedule.lastDate ? fmtDate(schedule.lastDate) : "—"}
-          sub={schedule.ok && schedule.rows.length ? schedule.rows.length + " mensualités simulées" : ""} />
-        <KPI label="Coût futur simulé (intérêts + assurance)" value={schedule.ok ? fmt(schedule.totalInterest + schedule.totalInsurance) : "—"}
-          sub="sur l'ensemble du tableau simulé — estimation" />
-      </div>
-      <div className="card" style={{ marginTop: 16 }}>
-        <h2>Évolution cumulée des contributions</h2>
-        <ContribChart items={bal.items} />
-      </div>
-      <p className="note">
-        Toutes les valeurs recalculées sont des <b>estimations</b> : en cas d'écart, le décompte officiel Boursobank prévaut
-        (dates de valeur exactes, modalités d'assurance et conditions réelles du remboursement anticipé).
-      </p>
-    </>
-  );
-
-  const renderSettings = () => (
-    <>
-      <div className="card">
-        <h2>Paramètres du crédit — {settings.bank}</h2>
-        <div className="frow">
-          <Field label="Montant initial emprunté (€)"><input inputMode="decimal" value={settings.principal} onChange={setSetting("principal")} onBlur={() => commitSettings()} /></Field>
-          <Field label="Taux nominal annuel fixe (%)"><input inputMode="decimal" value={settings.annualRate} onChange={setSetting("annualRate")} onBlur={() => commitSettings()} /></Field>
-          <Field label="Durée (mois)"><input inputMode="numeric" value={settings.durationMonths} onChange={setSetting("durationMonths")} onBlur={() => commitSettings()} /></Field>
-          <Field label="Mensualité hors assurance (€)"><input inputMode="decimal" value={settings.baseMonthlyPayment} onChange={setSetting("baseMonthlyPayment")} onBlur={() => commitSettings()} /></Field>
-          <Field label="Date de première échéance (obligatoire)">
-            <input type="date" value={settings.firstPaymentDate} onChange={setSetting("firstPaymentDate")} onBlur={() => commitSettings("Date de première échéance renseignée : " + fmtDate(settings.firstPaymentDate) + ".")} />
-          </Field>
-        </div>
-        {!settings.firstPaymentDate && <div className="warnbox">Sans cette date, le tableau d'amortissement et les simulations ne peuvent pas être produits. Aucune date n'est inventée à votre place.</div>}
-        <div className="okbox">
-          Date confirmée par l'avis d'échéance Boursobank : première échéance prélevée le <b>12/07/2026</b>. La toute première échéance réelle est atypique
-          (1&nbsp;425,22&nbsp;€ : intérêts du 12/06 au 12/07 + assurance, sans amortissement de capital), car le déblocage a eu lieu le 12/06/2026. Les échéances pleines
-          de 3&nbsp;659,04&nbsp;€ commencent ensuite. Le tableau ci-dessous simule les 240&nbsp;échéances d'amortissement, fidèles au décompte officiel.
-        </div>
-        <h3>Assurance emprunteur</h3>
-        <div className="frow">
-          <Field label="Assurance mensuelle Mehdi (€)"><input inputMode="decimal" value={settings.insMehdi} onChange={setSetting("insMehdi")} onBlur={() => commitSettings()} /></Field>
-          <Field label="Assurance mensuelle Meriem (€)"><input inputMode="decimal" value={settings.insMeriem} onChange={setSetting("insMeriem")} onBlur={() => commitSettings()} /></Field>
-          <Field label="Calcul de l'assurance">
-            <select value={settings.insuranceMode} onChange={(e) => { setSetting("insuranceMode")(e); }} onBlur={() => commitSettings()}>
-              <option value="fixed">Fixe (montants constants)</option>
-              <option value="crd">Recalculée sur le capital restant dû</option>
-            </select>
-          </Field>
-          <Field label="Répartition des coûts (balance)">
-            <select value={settings.costMode} onChange={setSetting("costMode")} onBlur={() => commitSettings("Changement de mode de répartition : " + (settings.costMode === "strict" ? "assurance individualisée" : "strict 50/50") + ".")}>
-              <option value="strict">Mode strict 50/50 (défaut)</option>
-              <option value="individual">Assurance individualisée ({fmt(num(settings.insMehdi))} / {fmt(num(settings.insMeriem))})</option>
-            </select>
-          </Field>
-        </div>
-        <p className="note">Le changement de mode recalcule instantanément la balance sans toucher à l'historique des paiements réels.</p>
-        <h3>Capital restant dû officiel (prioritaire s'il est renseigné)</h3>
-        <div className="frow">
-          <Field label="Montant communiqué par la banque (€)"><input inputMode="decimal" value={settings.officialCRDAmount} onChange={setSetting("officialCRDAmount")} onBlur={() => commitSettings()} /></Field>
-          <Field label="Date de référence"><input type="date" value={settings.officialCRDDate} onChange={setSetting("officialCRDDate")} onBlur={() => commitSettings()} /></Field>
-          <div className="note" style={{ alignSelf: "end" }}>S'il est saisi, ce montant sert de point de départ aux simulations à partir de sa date : il est plus fiable que le calcul théorique.</div>
-        </div>
-        <h3>Répartition</h3>
-        <div className="frow">
-          <Field label="Propriété Mehdi (%)"><input inputMode="decimal" value={settings.ownMehdi} onChange={setSetting("ownMehdi")} onBlur={() => commitSettings()} /></Field>
-          <Field label="Propriété Meriem (%)"><input inputMode="decimal" value={settings.ownMeriem} onChange={setSetting("ownMeriem")} onBlur={() => commitSettings()} /></Field>
-          <Field label="Cible économique Mehdi (%)"><input inputMode="decimal" value={settings.targetMehdi} onChange={setSetting("targetMehdi")} onBlur={() => commitSettings()} /></Field>
-          <Field label="Cible économique Meriem (%)"><input inputMode="decimal" value={settings.targetMeriem} onChange={setSetting("targetMeriem")} onBlur={() => commitSettings()} /></Field>
-        </div>
-      </div>
-      <div className="card">
-        <h2>Plan de financement</h2>
-        <p className="note" style={{ marginBottom: 8 }}>
-          Chiffres issus de l'attestation notariée (12/06/2026) et des conditions particulières Boursobank. Le prix de vente réel est <b>{fmt(528646)}</b> (et non 550 000 €).
-        </p>
-        <div className="tscroll"><table className="ledger">
-          <tbody>
-            <tr><td className="l">Prix de vente (acte notarié)</td><td className="amt">{fmt(528646)}</td></tr>
-            <tr><td className="l">Enveloppe travaux</td><td className="amt">{fmt(num(settings.worksEnvelope))}</td></tr>
-            <tr><td className="l">Frais de notaire (conditions particulières)</td><td className="amt">{fmt(41200)}</td></tr>
-            <tr><td className="l">Frais de garantie Crédit Logement</td><td className="amt">{fmt(6813.38)}</td></tr>
-            <tr><td className="l"><b>Coût total du projet</b></td><td className="amt"><b>{fmt(528646 + num(settings.worksEnvelope) + 41200 + 6813.38)}</b></td></tr>
-            <tr><td className="l">Prêt Boursobank</td><td className="amt">{fmt(644200)}</td></tr>
-            <tr><td className="l"><b>Apport personnel total (frais de garantie inclus)</b></td><td className="amt"><b>{fmt(528646 + num(settings.worksEnvelope) + 41200 + 6813.38 - 644200)}</b></td></tr>
-          </tbody>
-        </table></div>
-        <h3>Utilisation du crédit</h3>
-        <div className="tscroll"><table className="ledger">
-          <tbody>
-            <tr><td className="l">Acquisition financée par le crédit</td><td className="amt">{fmt(num(settings.acquisition))}</td></tr>
-            <tr><td className="l">Enveloppe travaux</td><td className="amt">{fmt(num(settings.worksEnvelope))}</td></tr>
-            <tr><td className="l"><b>Total crédit</b></td><td className="amt"><b>{fmt(num(settings.acquisition) + num(settings.worksEnvelope))}</b></td></tr>
-            <tr><td className="l">Travaux effectivement débloqués</td><td className="amt">{fmt(worksReleasedTotal)}</td></tr>
-            <tr><td className="l">Enveloppe travaux restante</td><td className="amt">{fmt(num(settings.worksEnvelope) - worksReleasedTotal)}</td></tr>
-          </tbody>
-        </table></div>
-        <h3>Déblocages travaux</h3>
-        {(settings.worksReleases || []).map((w) => (
-          <div className="frow" key={w.id}>
-            <Field label="Date"><input type="date" value={w.date} onChange={setWorksRelease(w.id, "date")} /></Field>
-            <Field label="Montant (€)"><input inputMode="decimal" value={w.amount} onChange={setWorksRelease(w.id, "amount")} /></Field>
-            <Field label="Note"><input value={w.note} onChange={setWorksRelease(w.id, "note")} /></Field>
-            <div style={{ alignSelf: "end" }}><button className="btn btn-sm btn-danger" onClick={() => delWorksRelease(w.id)}>Supprimer</button></div>
-          </div>
-        ))}
-        <button className="btn btn-sm" onClick={addWorksRelease}>+ Ajouter un déblocage travaux</button>
-      </div>
-      <div className="card">
-        <h2>Caution Crédit Logement</h2>
-        <p>Montant final retenu : <b className="amt">{fmt(6813.38)}</b> — l'ancien montant de 6 583 € ne doit jamais être utilisé.</p>
-        <p className="note">Si Crédit Logement vous restitue une partie de la caution en fin de prêt, enregistrez-la dans le registre avec la catégorie « Remboursement Crédit Logement reçu » (montants négatifs) : la balance et les coûts non récupérables diminueront automatiquement.</p>
-      </div>
-    </>
-  );
-
-  const renderSchedule = () => (
-    <>
-      {!schedule.ok ? <div className="warnbox">{schedule.reason}</div> : (
-        <>
-          <div className="card">
-            <div style={{ display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
-              <h2>Tableau d'amortissement <span className="badge est">estimation</span></h2>
-              <button className="btn btn-sm" onClick={exportScheduleCSV}>Exporter en CSV</button>
-            </div>
-            <p className="note">
-              {schedule.rows.length} mensualités simulées · intérêts totaux {fmt(schedule.totalInterest)} · assurance totale {fmt(schedule.totalInsurance)}.
-              Les lignes dorées signalent les remboursements anticipés et recalages. Le décompte Boursobank prévaut.
-            </p>
-            {schedule.events.some((e) => e.type === "alerte") && (
-              <div className="warnbox">{schedule.events.find((e) => e.type === "alerte").msg}</div>
-            )}
-            <div className="tscroll" style={{ maxHeight: 520, overflowY: "auto" }}>
-              <table className="ledger">
-                <thead><tr>
-                  <th>N°</th><th className="l">Date</th><th>Mensualité HA</th><th>Intérêts</th><th>Capital</th>
-                  <th>Ass. Mehdi</th><th>Ass. Meriem</th><th>Ass. totale</th><th>Total</th><th>Capital restant dû</th>
-                </tr></thead>
-                <tbody>
-                  {(() => {
-                    const evText = (e) =>
-                      e.type === "prep"
-                        ? "Remboursement anticipé de " + fmt(e.applied) + " le " + fmtDate(e.date) + " (" + e.atLabel + ") → capital restant dû " + fmt(e.balAfter) +
-                          (Math.abs(e.newPay - e.oldPay) > EPS ? " · nouvelle mensualité HA estimée " + fmt(e.newPay) : " · mensualité conservée, durée réduite")
-                        : e.type === "recalage"
-                          ? "Recalage sur le capital restant dû officiel : " + fmt(e.balAfter) + " (au lieu de " + fmt(e.balBefore) + " théoriques)"
-                          : e.msg;
-                    const evRow = (e, k) => (
-                      <tr key={k} className="evrow"><td className="l" colSpan={10}>{evText(e)}</td></tr>
-                    );
-                    const isBefore = (e, rowDate) =>
-                      e.date < rowDate ||
-                      (e.date === rowDate && (e.type !== "prep" || (e.atLabel || "").indexOf("avant") >= 0));
-                    const evs = [...schedule.events].sort((a, b) => (a.date < b.date ? -1 : 1));
-                    let ei = 0;
-                    const out = [];
-                    schedule.rows.forEach((r) => {
-                      while (ei < evs.length && isBefore(evs[ei], r.date)) { out.push(evRow(evs[ei], "e" + ei)); ei++; }
-                      out.push(
-                        <tr key={"r" + r.n}>
-                          <td className="l">{r.n}</td><td className="l">{fmtDate(r.date)}</td>
-                          <td className="amt">{fmt(r.payment)}</td><td className="amt">{fmt(r.interest)}</td>
-                          <td className="amt">{fmt(r.capital)}</td><td className="amt">{fmt(r.insM)}</td>
-                          <td className="amt">{fmt(r.insMe)}</td><td className="amt">{fmt(r.ins)}</td>
-                          <td className="amt">{fmt(r.total)}</td><td className="amt">{fmt(r.balance)}</td>
-                        </tr>
-                      );
-                      while (ei < evs.length && evs[ei].date === r.date) { out.push(evRow(evs[ei], "e" + ei)); ei++; }
-                    });
-                    while (ei < evs.length) { out.push(evRow(evs[ei], "e" + ei)); ei++; }
-                    return out;
-                  })()}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </>
-      )}
-    </>
-  );
-
-  const renderRegistry = () => (
-    <>
-      {opForm && (
-        <OperationForm
-          title={opForm.id ? "Modifier l'opération" : "Ajouter une opération"}
-          initial={opForm.form} settings={settings}
-          onSave={saveOp} onCancel={() => setOpForm(null)}
-        />
-      )}
-      <div className="card">
-        <div style={{ display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
-          <h2>Registre des paiements</h2>
-          <div style={{ display: "flex", gap: 8 }}>
-            <button className="btn btn-primary btn-sm" onClick={() => setOpForm({ id: null, form: { ...EMPTY_OP_FORM } })}>+ Ajouter une opération</button>
-            <button className="btn btn-sm" onClick={exportRegistryCSV}>Exporter en CSV</button>
-          </div>
-        </div>
-        <div className="filters">
-          <Field label="Catégorie">
-            <select value={flt.cat} onChange={(e) => setFlt({ ...flt, cat: e.target.value })}>
-              <option value="">Toutes</option>
-              {CATEGORIES.map((c) => <option key={c}>{c}</option>)}
-            </select>
-          </Field>
-          <Field label="Payé par">
-            <select value={flt.who} onChange={(e) => setFlt({ ...flt, who: e.target.value })}>
-              <option value="">Tous</option><option>Mehdi</option><option>Meriem</option><option value="Commun">Compte commun</option>
-            </select>
-          </Field>
-          <Field label="Recherche"><input value={flt.q} onChange={(e) => setFlt({ ...flt, q: e.target.value })} placeholder="libellé, note…" /></Field>
-          <Field label="Tri">
-            <select value={flt.sort} onChange={(e) => setFlt({ ...flt, sort: e.target.value })}>
-              <option value="date-asc">Date croissante</option><option value="date-desc">Date décroissante</option>
-              <option value="total-desc">Montant décroissant</option><option value="total-asc">Montant croissant</option>
-            </select>
-          </Field>
-        </div>
-        <div className="tscroll">
-          <table className="ledger">
-            <thead><tr>
-              <th className="l">Date</th><th className="l">Catégorie</th><th className="l">Libellé</th><th>Total</th>
-              <th>Payé Mehdi</th><th>Payé Meriem</th><th>Compte commun</th><th>Part Mehdi</th><th>Part Meriem</th>
-              <th>Capital</th><th>Intérêts</th><th>Assurance</th><th>Frais</th><th className="l">Notes</th><th className="l">Actions</th>
-            </tr></thead>
-            <tbody>
-              {registryRows.length === 0 && (
-                <tr><td className="l" colSpan={15}>Aucune opération ne correspond aux filtres. Ajoutez une opération pour commencer.</td></tr>
-              )}
-              {registryRows.map((r) => (
-                <tr key={r.src + r.id}>
-                  <td className="l">{fmtDate(r.date)}</td>
-                  <td className="l">{r.category}</td>
-                  <td className="l">{r.label}</td>
-                  <td className="amt">{fmt(num(r.total))}</td>
-                  <td className="amt" style={{ color: "var(--mehdi)" }}>{num(r.paidMehdi) ? fmt(num(r.paidMehdi)) : "—"}</td>
-                  <td className="amt" style={{ color: "var(--meriem)" }}>{num(r.paidMeriem) ? fmt(num(r.paidMeriem)) : "—"}</td>
-                  <td className="amt">{num(r.paidJoint) ? fmt(num(r.paidJoint)) : "—"}</td>
-                  <td className="amt">{fmt(num(r.shareMehdi))}</td>
-                  <td className="amt">{fmt(num(r.shareMeriem))}</td>
-                  <td className="amt">{num(r.capital) ? fmt(num(r.capital)) : "—"}</td>
-                  <td className="amt">{num(r.interest) ? fmt(num(r.interest)) : "—"}</td>
-                  <td className="amt">{num(r.insurance) ? fmt(num(r.insurance)) : "—"}</td>
-                  <td className="amt">{num(r.fees) ? fmt(num(r.fees)) : "—"}</td>
-                  <td className="l" style={{ maxWidth: 220, fontSize: 12, color: "var(--muted)" }}>{r.notes}</td>
-                  <td className="l">
-                    {r.src === "op" ? (
-                      <div style={{ display: "flex", gap: 4 }}>
-                        <button className="btn btn-sm" onClick={() => { setOpForm({ id: r.id, form: opToForm(r) }); window.scrollTo({ top: 0, behavior: "smooth" }); }}>Modifier</button>
-                        <button className="btn btn-sm btn-danger" onClick={() => delOp(r)}>Suppr.</button>
-                      </div>
-                    ) : <span className="badge">Onglet Anticipés</span>}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        <p className="note" style={{ marginTop: 8 }}>
-          Aucun double comptage : une dépense payée depuis le compte commun est répartie 50/50 une seule fois et n'est jamais recomptée comme versement individuel.
-        </p>
-      </div>
-    </>
-  );
-
-  const renderPreps = () => (
-    <>
-      {prepForm && (
-        <PrepForm title={prepForm.id ? "Modifier le remboursement anticipé" : "Ajouter un remboursement anticipé"}
-          initial={prepForm.form} onSave={savePrep} onCancel={() => setPrepForm(null)} />
-      )}
-      {!prepForm && (
-        <div className="card" style={{ background: "var(--gold-soft)", borderColor: "var(--gold)" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
-            <div>
-              <h2>Remboursements anticipés</h2>
-              <p className="note">Traités dans l'ordre chronologique ; le prêt est recalculé à chaque étape.</p>
-            </div>
-            <button className="btn btn-gold" onClick={() => setPrepForm({ id: null, form: { ...EMPTY_PREP_FORM } })}>+ Ajouter un remboursement anticipé</button>
-          </div>
-        </div>
-      )}
-      {!schedule.ok && <div className="warnbox">{schedule.reason} Les remboursements peuvent être saisis, mais la simulation attend cette date.</div>}
-      {impacts.length === 0 && <div className="card"><p className="note">Aucun remboursement anticipé enregistré pour l'instant.</p></div>}
-      {impacts.map(({ p, ev, ok, interestSaved, oldEnd, newEnd, monthlySaving, insEstimate }) => (
-        <div className="card" key={p.id} style={p.id === lastPrepId ? { borderColor: "var(--gold)", boxShadow: "0 0 0 2px var(--gold-soft)" } : {}}>
-          <div style={{ display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: 8, alignItems: "start" }}>
-            <h2>
-              {fmt(num(p.amount))} le {fmtDate(p.date)} — payé par{" "}
-              <span className={p.paidBy === "Mehdi" ? "chip chip-m" : "chip chip-me"}>{p.paidBy}</span>{" "}
-              <span className="badge est">estimation</span>
-            </h2>
-            <div style={{ display: "flex", gap: 6 }}>
-              <button className="btn btn-sm" onClick={() => setPrepForm({ id: p.id, form: { date: p.date, amount: String(p.amount), paidBy: p.paidBy, fees: String(p.fees || ""), mode: p.mode, sameDayOrder: p.sameDayOrder || "after", notes: p.notes || "" } })}>Modifier</button>
-              <button className="btn btn-sm btn-danger" onClick={() => delPrep(p)}>Supprimer</button>
-            </div>
-          </div>
-          <p className="note">
-            {p.mode === "reduce_duration" ? "Mensualité conservée, durée réduite" : "Mensualité diminuée, durée conservée"}
-            {num(p.fees) > 0 ? " · frais/indemnité : " + fmt(num(p.fees)) + " (coût, sans effet sur le capital)" : ""}
-            {p.sameDayOrder === "before" ? " · appliqué avant l'échéance du même jour" : ""}
-            {p.notes ? " · " + p.notes : ""}
-          </p>
-          {ok && ev ? (
-            <div className="tscroll"><table className="ledger"><tbody>
-              <tr><td className="l">Capital restant dû avant remboursement</td><td className="amt">{fmt(ev.balBefore)}</td></tr>
-              <tr><td className="l">Montant du remboursement anticipé</td><td className="amt">− {fmt(ev.applied)}</td></tr>
-              <tr><td className="l"><b>Nouveau capital restant dû</b></td><td className="amt"><b>{fmt(ev.balAfter)}</b></td></tr>
-              <tr><td className="l">Ancienne mensualité hors assurance</td><td className="amt">{fmt(ev.oldPay)}</td></tr>
-              <tr><td className="l">Nouvelle mensualité hors assurance estimée</td><td className="amt">{fmt(ev.newPay)}</td></tr>
-              <tr><td className="l">Assurance estimée</td><td className="amt">{fmt(insEstimate)}</td></tr>
-              <tr><td className="l"><b>Nouvelle mensualité totale estimée</b></td><td className="amt"><b>{fmt(ev.newPay + insEstimate)}</b></td></tr>
-              <tr><td className="l">Économie mensuelle estimée</td><td className="amt">{fmt(Math.max(0, monthlySaving || 0))}</td></tr>
-              <tr><td className="l">Intérêts futurs évités estimés</td><td className="amt">{interestSaved == null ? "—" : fmt(interestSaved)}</td></tr>
-              {p.mode === "reduce_duration" && (
-                <tr><td className="l">Nouvelle date de fin de prêt</td><td className="amt">{fmtDate(newEnd)} <span className="note">(au lieu du {fmtDate(oldEnd)})</span></td></tr>
-              )}
-              <tr><td className="l">Contribution supplémentaire de {p.paidBy}</td><td className="amt">{fmt(num(p.amount) + num(p.fees))}</td></tr>
-              <tr><td className="l"><b>Compensation nécessaire de {p.paidBy === "Mehdi" ? "Meriem" : "Mehdi"} pour revenir à 50/50</b></td><td className="amt"><b>{fmt((num(p.amount) + num(p.fees)) / 2)}</b></td></tr>
-            </tbody></table></div>
-          ) : (
-            <p className="note">Simulation indisponible : renseignez la date de première échéance dans les paramètres.</p>
-          )}
-        </div>
-      ))}
-    </>
-  );
-
-  const renderBalance = () => (
-    <>
-      <Verdict />
-      <div className="card">
-        <h2>Balance à trois niveaux</h2>
-        <div className="tscroll"><table className="ledger">
-          <thead><tr><th className="l">Niveau</th><th>Mehdi</th><th>Meriem</th><th>Total</th></tr></thead>
-          <tbody>
-            <tr>
-              <td className="l"><b>Cash réellement payé</b><div className="note">toutes les sommes sorties</div></td>
-              <td className="amt">{fmt(bal.cashM)}</td><td className="amt">{fmt(bal.cashMe)}</td><td className="amt">{fmt(bal.cashM + bal.cashMe)}</td>
-            </tr>
-            <tr>
-              <td className="l"><b>Capital réellement remboursé</b><div className="note">apports, capital des mensualités, remboursements anticipés</div></td>
-              <td className="amt">{fmt(bal.capM)}</td><td className="amt">{fmt(bal.capMe)}</td><td className="amt">{fmt(bal.capM + bal.capMe)}</td>
-            </tr>
-            <tr>
-              <td className="l"><b>Coûts non récupérables</b><div className="note">intérêts, assurances, frais et caution non récupérée</div></td>
-              <td className="amt">{fmt(bal.sunkM)}</td><td className="amt">{fmt(bal.sunkMe)}</td><td className="amt">{fmt(bal.sunkM + bal.sunkMe)}</td>
-            </tr>
-          </tbody>
-        </table></div>
-        <p className="note" style={{ marginTop: 8 }}>
-          Le niveau « capital » et le niveau « coûts » se remplissent à partir des colonnes capital / intérêts / assurance / frais du registre :
-          renseignez-les sur les mensualités pour un suivi complet. La règle de compensation reste calculée sur le cash réellement payé
-          {settings.costMode === "individual" ? ", avec l'assurance imputée selon les montants réels (Mehdi " + fmt(num(settings.insMehdi)) + " / Meriem " + fmt(num(settings.insMeriem)) + ")" : ", chacun devant supporter 50 % des coûts communs"}.
-        </p>
-      </div>
-      <div className="card">
-        <h2>Évolution cumulée des contributions</h2>
-        <ContribChart items={bal.items} />
-      </div>
-    </>
-  );
-
-  const renderHistory = () => (
-    <div className="card">
-      <h2>Historique des modifications</h2>
-      {history.length === 0 ? <p className="note">Aucune modification enregistrée.</p> : (
-        <div className="tscroll"><table className="ledger">
-          <thead><tr><th className="l">Horodatage</th><th className="l">Action</th></tr></thead>
-          <tbody>
-            {[...history].reverse().map((h, i) => (
-              <tr key={i}>
-                <td className="l amt" style={{ fontSize: 12 }}>{new Date(h.ts).toLocaleString("fr-FR")}</td>
-                <td className="l">{h.action}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table></div>
-      )}
-    </div>
-  );
-
-  const renderExport = () => (
-    <>
-      <div className="card">
-        <h2>Export / import</h2>
-        <p className="note" style={{ marginBottom: 10 }}>
-          Les données sont conservées automatiquement dans le stockage local de cette application.
-          Exportez régulièrement un fichier JSON : c'est votre sauvegarde de référence, réimportable à tout moment.
-        </p>
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          <button className="btn btn-primary" onClick={exportJSON}>Exporter toutes les données (JSON)</button>
-          <label className="btn" style={{ display: "inline-block" }}>
-            Importer un fichier JSON
-            <input type="file" accept="application/json,.json" onChange={importJSON} style={{ display: "none" }} />
-          </label>
-          <button className="btn" onClick={exportRegistryCSV}>Registre en CSV</button>
-          <button className="btn" onClick={exportScheduleCSV} disabled={!schedule.ok}>Amortissement en CSV</button>
-        </div>
-        {importMsg && <div className={importMsg.startsWith("Import réussi") ? "okbox" : "warnbox"} style={{ marginTop: 10 }}>{importMsg}</div>}
-      </div>
-      <div className="card">
-        <h2>Réinitialisation</h2>
-        <p className="note" style={{ marginBottom: 8 }}>Revenir aux données préchargées Boursobank (apports 50/50, caution finale 6 813,38 €, balance 0 €).</p>
-        <button className="btn btn-danger" onClick={resetAll}>Réinitialiser aux données préchargées</button>
-      </div>
-    </>
-  );
-
-  if (!loaded) {
-    return (
-      <div className="bc-app"><style>{STYLES}</style>
-        <div className="wrap"><div className="card">Chargement des données…</div></div>
-      </div>
-    );
   }
+  function OperationForm({ initial, settings, onSave, onCancel, title }) {
+    const [f, setF] = useState(initial);
+    const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
+    const isAdj = f.category === "Ajustement entre Mehdi et Meriem";
+    const isMens = f.category === "Mensualit\xE9 de pr\xEAt";
+    const isRefund = f.category === "Remboursement Cr\xE9dit Logement re\xE7u";
+    const t = num(f.total);
+    const paidSum = f.payer === "custom" ? num(f.paidMehdi) + num(f.paidMeriem) + num(f.paidJoint) : t;
+    const detailSum = num(f.capital) + num(f.interest) + num(f.insurance) + num(f.fees);
+    return /* @__PURE__ */ React.createElement("div", { className: "card", style: { borderColor: "var(--ink)" } }, /* @__PURE__ */ React.createElement("h2", null, title), /* @__PURE__ */ React.createElement("div", { className: "frow" }, /* @__PURE__ */ React.createElement(Field, { label: "Date" }, /* @__PURE__ */ React.createElement("input", { type: "date", value: f.date, onChange: set("date") })), /* @__PURE__ */ React.createElement(Field, { label: "Cat\xE9gorie" }, /* @__PURE__ */ React.createElement("select", { value: f.category, onChange: set("category") }, CATEGORIES.map((c) => /* @__PURE__ */ React.createElement("option", { key: c, value: c }, c)))), /* @__PURE__ */ React.createElement(Field, { label: "Libell\xE9" }, /* @__PURE__ */ React.createElement("input", { value: f.label, onChange: set("label"), placeholder: "Ex. : mensualit\xE9 de juillet" })), /* @__PURE__ */ React.createElement(Field, { label: isAdj ? "Montant du versement (\u20AC)" : "Montant total (\u20AC)" }, /* @__PURE__ */ React.createElement("input", { inputMode: "decimal", value: f.total, onChange: set("total"), placeholder: "0,00" }))), isAdj ? /* @__PURE__ */ React.createElement("div", { className: "frow" }, /* @__PURE__ */ React.createElement(Field, { label: "Vers\xE9 par" }, /* @__PURE__ */ React.createElement("select", { value: f.adjFrom, onChange: set("adjFrom") }, /* @__PURE__ */ React.createElement("option", null, "Mehdi"), /* @__PURE__ */ React.createElement("option", null, "Meriem"))), /* @__PURE__ */ React.createElement("div", { className: "note", style: { alignSelf: "end" } }, "Un ajustement transf\xE8re de l'argent entre vous : il rapproche la balance de 0 sans \xEAtre une d\xE9pense commune.")) : /* @__PURE__ */ React.createElement("div", { className: "frow" }, /* @__PURE__ */ React.createElement(Field, { label: "Pay\xE9 par" }, /* @__PURE__ */ React.createElement("select", { value: f.payer, onChange: set("payer") }, /* @__PURE__ */ React.createElement("option", { value: "mehdi" }, "Mehdi"), /* @__PURE__ */ React.createElement("option", { value: "meriem" }, "Meriem"), /* @__PURE__ */ React.createElement("option", { value: "joint" }, "Compte commun (r\xE9parti 50/50)"), /* @__PURE__ */ React.createElement("option", { value: "custom" }, "R\xE9partition personnalis\xE9e"))), f.payer === "custom" && /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement(Field, { label: "Pay\xE9 par Mehdi (\u20AC)" }, /* @__PURE__ */ React.createElement("input", { inputMode: "decimal", value: f.paidMehdi, onChange: set("paidMehdi") })), /* @__PURE__ */ React.createElement(Field, { label: "Pay\xE9 par Meriem (\u20AC)" }, /* @__PURE__ */ React.createElement("input", { inputMode: "decimal", value: f.paidMeriem, onChange: set("paidMeriem") })), /* @__PURE__ */ React.createElement(Field, { label: "Pay\xE9 depuis le compte commun (\u20AC)" }, /* @__PURE__ */ React.createElement("input", { inputMode: "decimal", value: f.paidJoint, onChange: set("paidJoint") })), /* @__PURE__ */ React.createElement(Field, { label: "Part imput\xE9e \xE0 Mehdi (\u20AC)" }, /* @__PURE__ */ React.createElement("input", { inputMode: "decimal", value: f.shareMehdi, onChange: set("shareMehdi"), placeholder: t ? String(t / 2) : "" })), /* @__PURE__ */ React.createElement(Field, { label: "Part imput\xE9e \xE0 Meriem (\u20AC)" }, /* @__PURE__ */ React.createElement("input", { inputMode: "decimal", value: f.shareMeriem, onChange: set("shareMeriem"), placeholder: t ? String(t / 2) : "" })))), !isAdj && /* @__PURE__ */ React.createElement("div", { className: "frow" }, /* @__PURE__ */ React.createElement(Field, { label: "Part capital (\u20AC)" }, /* @__PURE__ */ React.createElement("input", { inputMode: "decimal", value: f.capital, onChange: set("capital") })), /* @__PURE__ */ React.createElement(Field, { label: "Part int\xE9r\xEAts (\u20AC)" }, /* @__PURE__ */ React.createElement("input", { inputMode: "decimal", value: f.interest, onChange: set("interest") })), /* @__PURE__ */ React.createElement(Field, { label: "Part assurance (\u20AC)" }, /* @__PURE__ */ React.createElement(
+      "input",
+      {
+        inputMode: "decimal",
+        value: f.insurance,
+        onChange: set("insurance"),
+        placeholder: isMens ? String(num(settings.insMehdi) + num(settings.insMeriem)) : ""
+      }
+    )), /* @__PURE__ */ React.createElement(Field, { label: "Part frais (\u20AC)" }, /* @__PURE__ */ React.createElement("input", { inputMode: "decimal", value: f.fees, onChange: set("fees") }))), /* @__PURE__ */ React.createElement("div", { className: "frow" }, /* @__PURE__ */ React.createElement(Field, { label: "Notes" }, /* @__PURE__ */ React.createElement("textarea", { rows: 2, value: f.notes, onChange: set("notes") }))), isMens && /* @__PURE__ */ React.createElement("p", { className: "note" }, "Astuce : reportez les parts capital / int\xE9r\xEAts / assurance du tableau d'amortissement pour cette \xE9ch\xE9ance. L'assurance est utilis\xE9e par le mode \xAB assurance individualis\xE9e \xBB."), isRefund && /* @__PURE__ */ React.createElement("p", { className: "note" }, "Restitution re\xE7ue : saisissez des montants n\xE9gatifs (ex. \u22121 500 pay\xE9 par le compte commun) pour que la balance et les co\xFBts non r\xE9cup\xE9rables diminuent."), f.payer === "custom" && Math.abs(paidSum - t) > EPS && !isAdj && /* @__PURE__ */ React.createElement("div", { className: "warnbox" }, "La somme des paiements (", fmt(paidSum), ") ne correspond pas au montant total (", fmt(t), "). V\xE9rifiez avant d'enregistrer."), detailSum > 0 && Math.abs(detailSum - Math.abs(t)) > EPS && !isAdj && /* @__PURE__ */ React.createElement("div", { className: "warnbox" }, "Le d\xE9tail capital + int\xE9r\xEAts + assurance + frais (", fmt(detailSum), ") diff\xE8re du total (", fmt(t), "). C'est autoris\xE9, mais v\xE9rifiez."), /* @__PURE__ */ React.createElement("div", { style: { display: "flex", gap: 8 } }, /* @__PURE__ */ React.createElement("button", { className: "btn btn-primary", onClick: () => onSave(f) }, "Enregistrer l'op\xE9ration"), /* @__PURE__ */ React.createElement("button", { className: "btn", onClick: onCancel }, "Annuler")));
+  }
+  const EMPTY_PREP_FORM = {
+    date: "",
+    amount: "",
+    paidBy: "Mehdi",
+    fees: "",
+    mode: "reduce_payment",
+    sameDayOrder: "after",
+    notes: ""
+  };
+  function PrepForm({ initial, onSave, onCancel, title }) {
+    const [f, setF] = useState(initial);
+    const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
+    return /* @__PURE__ */ React.createElement("div", { className: "card", style: { borderColor: "var(--gold)" } }, /* @__PURE__ */ React.createElement("h2", null, title), /* @__PURE__ */ React.createElement("div", { className: "frow" }, /* @__PURE__ */ React.createElement(Field, { label: "Date du remboursement" }, /* @__PURE__ */ React.createElement("input", { type: "date", value: f.date, onChange: set("date") })), /* @__PURE__ */ React.createElement(Field, { label: "Montant (\u20AC)" }, /* @__PURE__ */ React.createElement("input", { inputMode: "decimal", value: f.amount, onChange: set("amount"), placeholder: "0,00" })), /* @__PURE__ */ React.createElement(Field, { label: "Pay\xE9 par" }, /* @__PURE__ */ React.createElement("select", { value: f.paidBy, onChange: set("paidBy") }, /* @__PURE__ */ React.createElement("option", null, "Mehdi"), /* @__PURE__ */ React.createElement("option", null, "Meriem"))), /* @__PURE__ */ React.createElement(Field, { label: "Frais / indemnit\xE9 bancaire (\u20AC)" }, /* @__PURE__ */ React.createElement("input", { inputMode: "decimal", value: f.fees, onChange: set("fees"), placeholder: "0,00" }))), /* @__PURE__ */ React.createElement("div", { className: "frow" }, /* @__PURE__ */ React.createElement(Field, { label: "Traitement du remboursement" }, /* @__PURE__ */ React.createElement("select", { value: f.mode, onChange: set("mode") }, /* @__PURE__ */ React.createElement("option", { value: "reduce_payment" }, "Diminuer la mensualit\xE9 en conservant la dur\xE9e restante (d\xE9faut)"), /* @__PURE__ */ React.createElement("option", { value: "reduce_duration" }, "Conserver la mensualit\xE9 et r\xE9duire la dur\xE9e restante"))), /* @__PURE__ */ React.createElement(Field, { label: "Si m\xEAme jour qu'une \xE9ch\xE9ance" }, /* @__PURE__ */ React.createElement("select", { value: f.sameDayOrder, onChange: set("sameDayOrder") }, /* @__PURE__ */ React.createElement("option", { value: "after" }, "\xC9ch\xE9ance d'abord, puis remboursement (d\xE9faut)"), /* @__PURE__ */ React.createElement("option", { value: "before" }, "Remboursement d'abord, puis \xE9ch\xE9ance"))), /* @__PURE__ */ React.createElement(Field, { label: "Notes" }, /* @__PURE__ */ React.createElement("input", { value: f.notes, onChange: set("notes") }))), /* @__PURE__ */ React.createElement("p", { className: "note" }, "Le montant diminue le capital restant d\xFB. Les frais sont un co\xFBt support\xE9 par le payeur (partag\xE9 50/50 dans la balance) mais ne r\xE9duisent pas le capital."), /* @__PURE__ */ React.createElement("div", { style: { display: "flex", gap: 8, marginTop: 8 } }, /* @__PURE__ */ React.createElement("button", { className: "btn btn-gold", onClick: () => onSave(f) }, "Enregistrer le remboursement anticip\xE9"), /* @__PURE__ */ React.createElement("button", { className: "btn", onClick: onCancel }, "Annuler")));
+  }
+  const TABS = [
+    "Tableau de bord",
+    "Cr\xE9dit & param\xE8tres",
+    "Amortissement mensuel",
+    "Registre des paiements",
+    "Remboursements anticip\xE9s",
+    "Balance Mehdi / Meriem",
+    "Historique",
+    "Export / import"
+  ];
+  function App() {
+    const [data, setData] = useState(freshData);
+    const [loaded, setLoaded] = useState(false);
+    const [saveState, setSaveState] = useState("\u2026");
+    const [tab, setTab] = useState(TABS[0]);
+    const [opForm, setOpForm] = useState(null);
+    const [prepForm, setPrepForm] = useState(null);
+    const [lastPrepId, setLastPrepId] = useState(null);
+    const [flt, setFlt] = useState({ cat: "", who: "", q: "", sort: "date-asc" });
+    const [importMsg, setImportMsg] = useState("");
+    const { settings, ops, preps, history } = data;
+    const applyingRemote = React.useRef(false);
+    const localWrite = React.useRef(false);
+    useEffect(() => {
+      let unsub = null;
+      (async () => {
+        try {
+          let tries = 0;
+          while (!window.cloudDb && tries < 50) {
+            await new Promise((r) => setTimeout(r, 100));
+            tries++;
+          }
+          if (!window.cloudDb) {
+            setSaveState("Hors ligne \u2014 cloud indisponible");
+            setLoaded(true);
+            return;
+          }
+          unsub = window.cloudDb.listen((d) => {
+            if (d && d.settings && Array.isArray(d.ops)) {
+              d.settings = { ...DEFAULT_SETTINGS, ...d.settings, caution: 6813.38 };
+              d.preps = Array.isArray(d.preps) ? d.preps : [];
+              d.history = Array.isArray(d.history) ? d.history : [];
+              applyingRemote.current = true;
+              setData(d);
+              setSaveState("Synchronis\xE9");
+            }
+          }, async (exists) => {
+            if (!exists) {
+              try {
+                await window.cloudDb.save(freshData());
+              } catch (e) {
+              }
+            }
+            setLoaded(true);
+          });
+        } catch (e) {
+          setSaveState("Hors ligne \u2014 cloud indisponible");
+          setLoaded(true);
+        }
+      })();
+      return () => {
+        if (unsub) unsub();
+      };
+    }, []);
+    useEffect(() => {
+      if (!loaded) return;
+      if (applyingRemote.current) {
+        applyingRemote.current = false;
+        return;
+      }
+      if (!window.cloudDb) return;
+      setSaveState("Enregistrement\u2026");
+      const t = setTimeout(async () => {
+        try {
+          await window.cloudDb.save(data);
+          setSaveState("Synchronis\xE9");
+        } catch (e) {
+          setSaveState("\xC9chec de synchro \u2014 r\xE9essayez");
+        }
+      }, 600);
+      return () => clearTimeout(t);
+    }, [data, loaded]);
+    const log = (action) => (d) => ({
+      ...d,
+      history: [...d.history, { ts: (/* @__PURE__ */ new Date()).toISOString(), action }].slice(-300)
+    });
+    const mutate = (fn, action) => setData((d) => log(action)(fn(d)));
+    const schedule = useMemo(() => buildSchedule(settings, preps), [settings, preps]);
+    const impacts = useMemo(() => prepImpacts(settings, preps), [settings, preps]);
+    const bal = useMemo(() => computeBalance(ops, preps, settings), [ops, preps, settings]);
+    const today = todayISO();
+    const paidRows = schedule.ok ? schedule.rows.filter((r) => r.date <= today) : [];
+    const lastPaid = paidRows.length ? paidRows[paidRows.length - 1] : null;
+    const prePaidBeforeStart = sortedPreps(preps).filter((p) => p.date <= today && (!schedule.rows.length || p.date < schedule.rows[0].date)).reduce((a, p) => a + num(p.amount), 0);
+    const crdNow = schedule.ok ? lastPaid ? lastPaid.balance : Math.max(0, num(settings.principal) - prePaidBeforeStart) : null;
+    const currentRow = schedule.ok ? schedule.rows.find((r) => r.date >= today) || lastPaid : null;
+    const currentPayTotal = currentRow ? currentRow.payment + currentRow.ins : null;
+    const payChanged = schedule.events.some((e) => e.type === "prep" && Math.abs(e.newPay - e.oldPay) > EPS);
+    const verdictTone = Math.abs(bal.netM) <= EPS ? "eq" : bal.netM > 0 ? "m" : "me";
+    const verdictText = Math.abs(bal.netM) <= EPS ? "\xC9quilibre parfait : personne ne doit rien \xE0 l'autre." : bal.netM > 0 ? "Meriem doit compenser Mehdi de " + fmt(bal.netM) + "." : "Mehdi doit compenser Meriem de " + fmt(-bal.netM) + ".";
+    const registryRows = useMemo(() => {
+      const fromOps = ops.map((o) => ({ ...o, src: "op" }));
+      const fromPreps = preps.map((p) => ({
+        id: p.id,
+        src: "prep",
+        date: p.date,
+        category: "Remboursement anticip\xE9",
+        label: "Remboursement anticip\xE9" + (num(p.fees) > 0 ? " + frais " + fmt(num(p.fees)) : ""),
+        total: num(p.amount) + num(p.fees),
+        paidMehdi: p.paidBy === "Mehdi" ? num(p.amount) + num(p.fees) : 0,
+        paidMeriem: p.paidBy === "Meriem" ? num(p.amount) + num(p.fees) : 0,
+        paidJoint: 0,
+        shareMehdi: (num(p.amount) + num(p.fees)) / 2,
+        shareMeriem: (num(p.amount) + num(p.fees)) / 2,
+        capital: num(p.amount),
+        interest: 0,
+        insurance: 0,
+        fees: num(p.fees),
+        notes: (p.notes || "") + " \u2014 g\xE9r\xE9 dans l'onglet Remboursements anticip\xE9s"
+      }));
+      let rows = [...fromOps, ...fromPreps];
+      if (flt.cat) rows = rows.filter((r) => r.category === flt.cat);
+      if (flt.who === "Mehdi") rows = rows.filter((r) => num(r.paidMehdi) !== 0);
+      if (flt.who === "Meriem") rows = rows.filter((r) => num(r.paidMeriem) !== 0);
+      if (flt.who === "Commun") rows = rows.filter((r) => num(r.paidJoint) !== 0);
+      if (flt.q) {
+        const q = flt.q.toLowerCase();
+        rows = rows.filter((r) => (r.label + " " + r.notes + " " + r.category).toLowerCase().includes(q));
+      }
+      const dir = flt.sort.endsWith("desc") ? -1 : 1;
+      if (flt.sort.startsWith("date")) rows.sort((a, b) => ((a.date || "0000") < (b.date || "0000") ? -1 : 1) * dir);
+      else rows.sort((a, b) => (num(a.total) - num(b.total)) * dir);
+      return rows;
+    }, [ops, preps, flt]);
+    const saveOp = (f) => {
+      const isNew = !opForm.id;
+      const op = formToOp(f, opForm.id);
+      mutate(
+        (d) => ({ ...d, ops: isNew ? [...d.ops, op] : d.ops.map((o) => o.id === op.id ? op : o) }),
+        (isNew ? "Ajout" : "Modification") + " d'une op\xE9ration : " + (op.label || op.category) + " (" + fmt(op.total) + ")."
+      );
+      setOpForm(null);
+    };
+    const delOp = (o) => {
+      if (!window.confirm("Supprimer d\xE9finitivement \xAB " + (o.label || o.category) + " \xBB ?")) return;
+      mutate(
+        (d) => ({ ...d, ops: d.ops.filter((x) => x.id !== o.id) }),
+        "Suppression d'une op\xE9ration : " + (o.label || o.category) + " (" + fmt(num(o.total)) + ")."
+      );
+    };
+    const savePrep = (f) => {
+      const isNew = !prepForm.id;
+      const p = {
+        id: prepForm.id || uid(),
+        date: f.date,
+        amount: num(f.amount),
+        paidBy: f.paidBy,
+        fees: num(f.fees),
+        mode: f.mode,
+        sameDayOrder: f.sameDayOrder,
+        notes: f.notes.trim()
+      };
+      if (!p.date || p.amount <= 0) {
+        window.alert("Date et montant strictement positif requis.");
+        return;
+      }
+      mutate(
+        (d) => ({ ...d, preps: isNew ? [...d.preps, p] : d.preps.map((x) => x.id === p.id ? p : x) }),
+        (isNew ? "Ajout" : "Modification") + " d'un remboursement anticip\xE9 de " + fmt(p.amount) + " pay\xE9 par " + p.paidBy + "."
+      );
+      setLastPrepId(p.id);
+      setPrepForm(null);
+    };
+    const delPrep = (p) => {
+      if (!window.confirm("Supprimer ce remboursement anticip\xE9 de " + fmt(num(p.amount)) + " ?")) return;
+      mutate(
+        (d) => ({ ...d, preps: d.preps.filter((x) => x.id !== p.id) }),
+        "Suppression d'un remboursement anticip\xE9 de " + fmt(num(p.amount)) + "."
+      );
+    };
+    const setSetting = (k) => (e) => setData((d) => ({ ...d, settings: { ...d.settings, [k]: e.target.value } }));
+    const commitSettings = (msg) => mutate((d) => d, msg || "Mise \xE0 jour des param\xE8tres du cr\xE9dit.");
+    const exportJSON = () => {
+      downloadText("balance-credit-versailles-" + today + ".json", JSON.stringify(data, null, 2), "application/json");
+      mutate((d) => d, "Export JSON des donn\xE9es.");
+    };
+    const importJSON = (e) => {
+      const file = e.target.files && e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        try {
+          const d = JSON.parse(reader.result);
+          if (!d || !d.settings || !Array.isArray(d.ops)) throw new Error("structure invalide");
+          d.settings = { ...DEFAULT_SETTINGS, ...d.settings, caution: 6813.38 };
+          d.preps = Array.isArray(d.preps) ? d.preps : [];
+          d.history = Array.isArray(d.history) ? d.history : [];
+          setData(log("Import JSON : donn\xE9es remplac\xE9es par le fichier \xAB " + file.name + " \xBB.")(d));
+          setImportMsg("Import r\xE9ussi : " + d.ops.length + " op\xE9rations, " + d.preps.length + " remboursements anticip\xE9s.");
+        } catch (err) {
+          setImportMsg("Import impossible : le fichier n'est pas un export JSON valide de cette application.");
+        }
+      };
+      reader.readAsText(file);
+      e.target.value = "";
+    };
+    const exportRegistryCSV = () => {
+      const head = ["Date", "Cat\xE9gorie", "Libell\xE9", "Montant total", "Pay\xE9 par Mehdi", "Pay\xE9 par Meriem", "Pay\xE9 compte commun", "Part Mehdi", "Part Meriem", "Capital", "Int\xE9r\xEAts", "Assurance", "Frais", "Notes"];
+      const lines = [head.join(";")];
+      registryRows.forEach((r) => lines.push([
+        csvCell(fmtDate(r.date)),
+        csvCell(r.category),
+        csvCell(r.label),
+        csvNum(r.total),
+        csvNum(r.paidMehdi),
+        csvNum(r.paidMeriem),
+        csvNum(r.paidJoint),
+        csvNum(r.shareMehdi),
+        csvNum(r.shareMeriem),
+        csvNum(r.capital),
+        csvNum(r.interest),
+        csvNum(r.insurance),
+        csvNum(r.fees),
+        csvCell(r.notes)
+      ].join(";")));
+      downloadText("registre-paiements-" + today + ".csv", lines.join("\n"), "text/csv;charset=utf-8");
+    };
+    const exportScheduleCSV = () => {
+      if (!schedule.ok) return;
+      const head = ["N\xB0", "Date", "Mensualit\xE9 hors assurance", "Int\xE9r\xEAts", "Capital", "Assurance Mehdi", "Assurance Meriem", "Assurance totale", "Total", "Capital restant d\xFB"];
+      const lines = [head.join(";")];
+      schedule.rows.forEach((r) => lines.push([
+        r.n,
+        csvCell(fmtDate(r.date)),
+        csvNum(r.payment),
+        csvNum(r.interest),
+        csvNum(r.capital),
+        csvNum(r.insM),
+        csvNum(r.insMe),
+        csvNum(r.ins),
+        csvNum(r.total),
+        csvNum(r.balance)
+      ].join(";")));
+      downloadText("amortissement-" + today + ".csv", lines.join("\n"), "text/csv;charset=utf-8");
+    };
+    const resetAll = () => {
+      if (!window.confirm("R\xE9initialiser toutes les donn\xE9es aux valeurs pr\xE9charg\xE9es ? ATTENTION : en mode cloud, cela remet \xE0 z\xE9ro les donn\xE9es partag\xE9es pour vous ET pour Meriem, sur tous les appareils. Pensez \xE0 exporter en JSON avant.")) return;
+      setData(log("R\xE9initialisation compl\xE8te aux donn\xE9es pr\xE9charg\xE9es.")(freshData()));
+    };
+    const addWorksRelease = () => mutate(
+      (d) => ({ ...d, settings: { ...d.settings, worksReleases: [...d.settings.worksReleases || [], { id: uid(), date: "", amount: "", note: "" }] } }),
+      "Ajout d'une ligne de d\xE9blocage travaux."
+    );
+    const setWorksRelease = (id, k) => (e) => setData((d) => ({ ...d, settings: { ...d.settings, worksReleases: d.settings.worksReleases.map((w) => w.id === id ? { ...w, [k]: e.target.value } : w) } }));
+    const delWorksRelease = (id) => mutate(
+      (d) => ({ ...d, settings: { ...d.settings, worksReleases: d.settings.worksReleases.filter((w) => w.id !== id) } }),
+      "Suppression d'une ligne de d\xE9blocage travaux."
+    );
+    const insSum = num(settings.insMehdi) + num(settings.insMeriem);
+    const worksReleasedTotal = (settings.worksReleases || []).reduce((a, w) => a + num(w.amount), 0);
+    const Verdict = () => {
+      const totalPaid = bal.paidM + bal.paidMe;
+      const pM = totalPaid > 0 ? bal.paidM / totalPaid * 100 : 50;
+      return /* @__PURE__ */ React.createElement("div", { className: "verdict " + verdictTone }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("div", { className: "big" }, verdictText), /* @__PURE__ */ React.createElement("div", { className: "note" }, "Mehdi a pay\xE9 ", fmt(bal.paidM), " \xB7 Meriem a pay\xE9 ", fmt(bal.paidMe), " \xB7 cible 50/50 : ", fmt(bal.targetEach), " chacun", settings.costMode === "individual" ? " (assurance imput\xE9e selon les montants r\xE9els)" : "", ".")), /* @__PURE__ */ React.createElement("div", { className: "beam" }, /* @__PURE__ */ React.createElement("div", { className: "bar" }, /* @__PURE__ */ React.createElement("div", { className: "m", style: { width: pM + "%" } }), /* @__PURE__ */ React.createElement("div", { className: "me", style: { width: 100 - pM + "%" } })), /* @__PURE__ */ React.createElement("div", { className: "lbl" }, /* @__PURE__ */ React.createElement("span", null, "Mehdi ", pM.toFixed(1).replace(".", ","), " %"), /* @__PURE__ */ React.createElement("span", null, "Meriem ", (100 - pM).toFixed(1).replace(".", ","), " %"))));
+    };
+    const renderDashboard = () => /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement(Verdict, null), !schedule.ok && /* @__PURE__ */ React.createElement("div", { className: "warnbox" }, schedule.reason), /* @__PURE__ */ React.createElement("div", { className: "grid" }, /* @__PURE__ */ React.createElement(KPI, { tone: "m", label: "Total r\xE9ellement financ\xE9 par Mehdi", value: fmt(bal.paidM), sub: "dont remboursements anticip\xE9s : " + fmt(bal.prepTotM) }), /* @__PURE__ */ React.createElement(KPI, { tone: "me", label: "Total r\xE9ellement financ\xE9 par Meriem", value: fmt(bal.paidMe), sub: "dont remboursements anticip\xE9s : " + fmt(bal.prepTotMe) }), /* @__PURE__ */ React.createElement(KPI, { label: "Objectif th\xE9orique 50/50 (chacun)", value: fmt(bal.targetEach), sub: "moiti\xE9 du total pay\xE9 \xE0 deux" }), /* @__PURE__ */ React.createElement(KPI, { label: "\xC9cart actuel Mehdi \u2212 Meriem", value: fmt(bal.gap), sub: Math.abs(bal.netM) <= EPS ? "aucune compensation n\xE9cessaire" : "compensation n\xE9cessaire : " + fmt(Math.abs(bal.netM)) }), /* @__PURE__ */ React.createElement(
+      KPI,
+      {
+        label: "Capital restant d\xFB (estimation)",
+        value: crdNow == null ? "\u2014" : fmt(crdNow),
+        sub: settings.officialCRDAmount && settings.officialCRDDate ? "recal\xE9 sur le montant officiel du " + fmtDate(settings.officialCRDDate) : "calcul th\xE9orique \u2014 le d\xE9compte Boursobank pr\xE9vaut"
+      }
+    ), /* @__PURE__ */ React.createElement(
+      KPI,
+      {
+        label: "Mensualit\xE9 actuelle, assurance comprise",
+        value: currentPayTotal == null ? "\u2014" : fmt(currentPayTotal),
+        sub: currentRow ? payChanged ? "estimation apr\xE8s remboursement(s) anticip\xE9(s)" : "hors assurance : " + fmt(currentRow.payment) : "en attente de la date de premi\xE8re \xE9ch\xE9ance"
+      }
+    ), /* @__PURE__ */ React.createElement(
+      KPI,
+      {
+        label: "Date th\xE9orique de derni\xE8re \xE9ch\xE9ance",
+        value: schedule.lastDate ? fmtDate(schedule.lastDate) : "\u2014",
+        sub: schedule.ok && schedule.rows.length ? schedule.rows.length + " mensualit\xE9s simul\xE9es" : ""
+      }
+    ), /* @__PURE__ */ React.createElement(
+      KPI,
+      {
+        label: "Co\xFBt futur simul\xE9 (int\xE9r\xEAts + assurance)",
+        value: schedule.ok ? fmt(schedule.totalInterest + schedule.totalInsurance) : "\u2014",
+        sub: "sur l'ensemble du tableau simul\xE9 \u2014 estimation"
+      }
+    )), /* @__PURE__ */ React.createElement("div", { className: "card", style: { marginTop: 16 } }, /* @__PURE__ */ React.createElement("h2", null, "\xC9volution cumul\xE9e des contributions"), /* @__PURE__ */ React.createElement(ContribChart, { items: bal.items })), /* @__PURE__ */ React.createElement("p", { className: "note" }, "Toutes les valeurs recalcul\xE9es sont des ", /* @__PURE__ */ React.createElement("b", null, "estimations"), " : en cas d'\xE9cart, le d\xE9compte officiel Boursobank pr\xE9vaut (dates de valeur exactes, modalit\xE9s d'assurance et conditions r\xE9elles du remboursement anticip\xE9)."));
+    const renderSettings = () => /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("div", { className: "card" }, /* @__PURE__ */ React.createElement("h2", null, "Param\xE8tres du cr\xE9dit \u2014 ", settings.bank), /* @__PURE__ */ React.createElement("div", { className: "frow" }, /* @__PURE__ */ React.createElement(Field, { label: "Montant initial emprunt\xE9 (\u20AC)" }, /* @__PURE__ */ React.createElement("input", { inputMode: "decimal", value: settings.principal, onChange: setSetting("principal"), onBlur: () => commitSettings() })), /* @__PURE__ */ React.createElement(Field, { label: "Taux nominal annuel fixe (%)" }, /* @__PURE__ */ React.createElement("input", { inputMode: "decimal", value: settings.annualRate, onChange: setSetting("annualRate"), onBlur: () => commitSettings() })), /* @__PURE__ */ React.createElement(Field, { label: "Dur\xE9e (mois)" }, /* @__PURE__ */ React.createElement("input", { inputMode: "numeric", value: settings.durationMonths, onChange: setSetting("durationMonths"), onBlur: () => commitSettings() })), /* @__PURE__ */ React.createElement(Field, { label: "Mensualit\xE9 hors assurance (\u20AC)" }, /* @__PURE__ */ React.createElement("input", { inputMode: "decimal", value: settings.baseMonthlyPayment, onChange: setSetting("baseMonthlyPayment"), onBlur: () => commitSettings() })), /* @__PURE__ */ React.createElement(Field, { label: "Date de premi\xE8re \xE9ch\xE9ance (obligatoire)" }, /* @__PURE__ */ React.createElement("input", { type: "date", value: settings.firstPaymentDate, onChange: setSetting("firstPaymentDate"), onBlur: () => commitSettings("Date de premi\xE8re \xE9ch\xE9ance renseign\xE9e : " + fmtDate(settings.firstPaymentDate) + ".") }))), !settings.firstPaymentDate && /* @__PURE__ */ React.createElement("div", { className: "warnbox" }, "Sans cette date, le tableau d'amortissement et les simulations ne peuvent pas \xEAtre produits. Aucune date n'est invent\xE9e \xE0 votre place."), /* @__PURE__ */ React.createElement("div", { className: "okbox" }, "Date confirm\xE9e par l'avis d'\xE9ch\xE9ance Boursobank : premi\xE8re \xE9ch\xE9ance pr\xE9lev\xE9e le ", /* @__PURE__ */ React.createElement("b", null, "12/07/2026"), ". La toute premi\xE8re \xE9ch\xE9ance r\xE9elle est atypique (1\xA0425,22\xA0\u20AC : int\xE9r\xEAts du 12/06 au 12/07 + assurance, sans amortissement de capital), car le d\xE9blocage a eu lieu le 12/06/2026. Les \xE9ch\xE9ances pleines de 3\xA0659,04\xA0\u20AC commencent ensuite. Le tableau ci-dessous simule les 240\xA0\xE9ch\xE9ances d'amortissement, fid\xE8les au d\xE9compte officiel."), /* @__PURE__ */ React.createElement("h3", null, "Assurance emprunteur"), /* @__PURE__ */ React.createElement("div", { className: "frow" }, /* @__PURE__ */ React.createElement(Field, { label: "Assurance mensuelle Mehdi (\u20AC)" }, /* @__PURE__ */ React.createElement("input", { inputMode: "decimal", value: settings.insMehdi, onChange: setSetting("insMehdi"), onBlur: () => commitSettings() })), /* @__PURE__ */ React.createElement(Field, { label: "Assurance mensuelle Meriem (\u20AC)" }, /* @__PURE__ */ React.createElement("input", { inputMode: "decimal", value: settings.insMeriem, onChange: setSetting("insMeriem"), onBlur: () => commitSettings() })), /* @__PURE__ */ React.createElement(Field, { label: "Calcul de l'assurance" }, /* @__PURE__ */ React.createElement("select", { value: settings.insuranceMode, onChange: (e) => {
+      setSetting("insuranceMode")(e);
+    }, onBlur: () => commitSettings() }, /* @__PURE__ */ React.createElement("option", { value: "fixed" }, "Fixe (montants constants)"), /* @__PURE__ */ React.createElement("option", { value: "crd" }, "Recalcul\xE9e sur le capital restant d\xFB"))), /* @__PURE__ */ React.createElement(Field, { label: "R\xE9partition des co\xFBts (balance)" }, /* @__PURE__ */ React.createElement("select", { value: settings.costMode, onChange: setSetting("costMode"), onBlur: () => commitSettings("Changement de mode de r\xE9partition : " + (settings.costMode === "strict" ? "assurance individualis\xE9e" : "strict 50/50") + ".") }, /* @__PURE__ */ React.createElement("option", { value: "strict" }, "Mode strict 50/50 (d\xE9faut)"), /* @__PURE__ */ React.createElement("option", { value: "individual" }, "Assurance individualis\xE9e (", fmt(num(settings.insMehdi)), " / ", fmt(num(settings.insMeriem)), ")")))), /* @__PURE__ */ React.createElement("p", { className: "note" }, "Le changement de mode recalcule instantan\xE9ment la balance sans toucher \xE0 l'historique des paiements r\xE9els."), /* @__PURE__ */ React.createElement("h3", null, "Capital restant d\xFB officiel (prioritaire s'il est renseign\xE9)"), /* @__PURE__ */ React.createElement("div", { className: "frow" }, /* @__PURE__ */ React.createElement(Field, { label: "Montant communiqu\xE9 par la banque (\u20AC)" }, /* @__PURE__ */ React.createElement("input", { inputMode: "decimal", value: settings.officialCRDAmount, onChange: setSetting("officialCRDAmount"), onBlur: () => commitSettings() })), /* @__PURE__ */ React.createElement(Field, { label: "Date de r\xE9f\xE9rence" }, /* @__PURE__ */ React.createElement("input", { type: "date", value: settings.officialCRDDate, onChange: setSetting("officialCRDDate"), onBlur: () => commitSettings() })), /* @__PURE__ */ React.createElement("div", { className: "note", style: { alignSelf: "end" } }, "S'il est saisi, ce montant sert de point de d\xE9part aux simulations \xE0 partir de sa date : il est plus fiable que le calcul th\xE9orique.")), /* @__PURE__ */ React.createElement("h3", null, "R\xE9partition"), /* @__PURE__ */ React.createElement("div", { className: "frow" }, /* @__PURE__ */ React.createElement(Field, { label: "Propri\xE9t\xE9 Mehdi (%)" }, /* @__PURE__ */ React.createElement("input", { inputMode: "decimal", value: settings.ownMehdi, onChange: setSetting("ownMehdi"), onBlur: () => commitSettings() })), /* @__PURE__ */ React.createElement(Field, { label: "Propri\xE9t\xE9 Meriem (%)" }, /* @__PURE__ */ React.createElement("input", { inputMode: "decimal", value: settings.ownMeriem, onChange: setSetting("ownMeriem"), onBlur: () => commitSettings() })), /* @__PURE__ */ React.createElement(Field, { label: "Cible \xE9conomique Mehdi (%)" }, /* @__PURE__ */ React.createElement("input", { inputMode: "decimal", value: settings.targetMehdi, onChange: setSetting("targetMehdi"), onBlur: () => commitSettings() })), /* @__PURE__ */ React.createElement(Field, { label: "Cible \xE9conomique Meriem (%)" }, /* @__PURE__ */ React.createElement("input", { inputMode: "decimal", value: settings.targetMeriem, onChange: setSetting("targetMeriem"), onBlur: () => commitSettings() })))), /* @__PURE__ */ React.createElement("div", { className: "card" }, /* @__PURE__ */ React.createElement("h2", null, "Plan de financement"), /* @__PURE__ */ React.createElement("p", { className: "note", style: { marginBottom: 8 } }, "Chiffres issus de l'attestation notari\xE9e (12/06/2026) et des conditions particuli\xE8res Boursobank. Le prix de vente r\xE9el est ", /* @__PURE__ */ React.createElement("b", null, fmt(528646)), " (et non 550 000 \u20AC)."), /* @__PURE__ */ React.createElement("div", { className: "tscroll" }, /* @__PURE__ */ React.createElement("table", { className: "ledger" }, /* @__PURE__ */ React.createElement("tbody", null, /* @__PURE__ */ React.createElement("tr", null, /* @__PURE__ */ React.createElement("td", { className: "l" }, "Prix de vente (acte notari\xE9)"), /* @__PURE__ */ React.createElement("td", { className: "amt" }, fmt(528646))), /* @__PURE__ */ React.createElement("tr", null, /* @__PURE__ */ React.createElement("td", { className: "l" }, "Enveloppe travaux"), /* @__PURE__ */ React.createElement("td", { className: "amt" }, fmt(num(settings.worksEnvelope)))), /* @__PURE__ */ React.createElement("tr", null, /* @__PURE__ */ React.createElement("td", { className: "l" }, "Frais de notaire (conditions particuli\xE8res)"), /* @__PURE__ */ React.createElement("td", { className: "amt" }, fmt(41200))), /* @__PURE__ */ React.createElement("tr", null, /* @__PURE__ */ React.createElement("td", { className: "l" }, "Frais de garantie Cr\xE9dit Logement"), /* @__PURE__ */ React.createElement("td", { className: "amt" }, fmt(6813.38))), /* @__PURE__ */ React.createElement("tr", null, /* @__PURE__ */ React.createElement("td", { className: "l" }, /* @__PURE__ */ React.createElement("b", null, "Co\xFBt total du projet")), /* @__PURE__ */ React.createElement("td", { className: "amt" }, /* @__PURE__ */ React.createElement("b", null, fmt(528646 + num(settings.worksEnvelope) + 41200 + 6813.38)))), /* @__PURE__ */ React.createElement("tr", null, /* @__PURE__ */ React.createElement("td", { className: "l" }, "Pr\xEAt Boursobank"), /* @__PURE__ */ React.createElement("td", { className: "amt" }, fmt(644200))), /* @__PURE__ */ React.createElement("tr", null, /* @__PURE__ */ React.createElement("td", { className: "l" }, /* @__PURE__ */ React.createElement("b", null, "Apport personnel total (frais de garantie inclus)")), /* @__PURE__ */ React.createElement("td", { className: "amt" }, /* @__PURE__ */ React.createElement("b", null, fmt(528646 + num(settings.worksEnvelope) + 41200 + 6813.38 - 644200))))))), /* @__PURE__ */ React.createElement("h3", null, "Utilisation du cr\xE9dit"), /* @__PURE__ */ React.createElement("div", { className: "tscroll" }, /* @__PURE__ */ React.createElement("table", { className: "ledger" }, /* @__PURE__ */ React.createElement("tbody", null, /* @__PURE__ */ React.createElement("tr", null, /* @__PURE__ */ React.createElement("td", { className: "l" }, "Acquisition financ\xE9e par le cr\xE9dit"), /* @__PURE__ */ React.createElement("td", { className: "amt" }, fmt(num(settings.acquisition)))), /* @__PURE__ */ React.createElement("tr", null, /* @__PURE__ */ React.createElement("td", { className: "l" }, "Enveloppe travaux"), /* @__PURE__ */ React.createElement("td", { className: "amt" }, fmt(num(settings.worksEnvelope)))), /* @__PURE__ */ React.createElement("tr", null, /* @__PURE__ */ React.createElement("td", { className: "l" }, /* @__PURE__ */ React.createElement("b", null, "Total cr\xE9dit")), /* @__PURE__ */ React.createElement("td", { className: "amt" }, /* @__PURE__ */ React.createElement("b", null, fmt(num(settings.acquisition) + num(settings.worksEnvelope))))), /* @__PURE__ */ React.createElement("tr", null, /* @__PURE__ */ React.createElement("td", { className: "l" }, "Travaux effectivement d\xE9bloqu\xE9s"), /* @__PURE__ */ React.createElement("td", { className: "amt" }, fmt(worksReleasedTotal))), /* @__PURE__ */ React.createElement("tr", null, /* @__PURE__ */ React.createElement("td", { className: "l" }, "Enveloppe travaux restante"), /* @__PURE__ */ React.createElement("td", { className: "amt" }, fmt(num(settings.worksEnvelope) - worksReleasedTotal)))))), /* @__PURE__ */ React.createElement("h3", null, "D\xE9blocages travaux"), (settings.worksReleases || []).map((w) => /* @__PURE__ */ React.createElement("div", { className: "frow", key: w.id }, /* @__PURE__ */ React.createElement(Field, { label: "Date" }, /* @__PURE__ */ React.createElement("input", { type: "date", value: w.date, onChange: setWorksRelease(w.id, "date") })), /* @__PURE__ */ React.createElement(Field, { label: "Montant (\u20AC)" }, /* @__PURE__ */ React.createElement("input", { inputMode: "decimal", value: w.amount, onChange: setWorksRelease(w.id, "amount") })), /* @__PURE__ */ React.createElement(Field, { label: "Note" }, /* @__PURE__ */ React.createElement("input", { value: w.note, onChange: setWorksRelease(w.id, "note") })), /* @__PURE__ */ React.createElement("div", { style: { alignSelf: "end" } }, /* @__PURE__ */ React.createElement("button", { className: "btn btn-sm btn-danger", onClick: () => delWorksRelease(w.id) }, "Supprimer")))), /* @__PURE__ */ React.createElement("button", { className: "btn btn-sm", onClick: addWorksRelease }, "+ Ajouter un d\xE9blocage travaux")), /* @__PURE__ */ React.createElement("div", { className: "card" }, /* @__PURE__ */ React.createElement("h2", null, "Caution Cr\xE9dit Logement"), /* @__PURE__ */ React.createElement("p", null, "Montant final retenu : ", /* @__PURE__ */ React.createElement("b", { className: "amt" }, fmt(6813.38)), " \u2014 l'ancien montant de 6 583 \u20AC ne doit jamais \xEAtre utilis\xE9."), /* @__PURE__ */ React.createElement("p", { className: "note" }, "Si Cr\xE9dit Logement vous restitue une partie de la caution en fin de pr\xEAt, enregistrez-la dans le registre avec la cat\xE9gorie \xAB Remboursement Cr\xE9dit Logement re\xE7u \xBB (montants n\xE9gatifs) : la balance et les co\xFBts non r\xE9cup\xE9rables diminueront automatiquement.")));
+    const renderSchedule = () => /* @__PURE__ */ React.createElement(React.Fragment, null, !schedule.ok ? /* @__PURE__ */ React.createElement("div", { className: "warnbox" }, schedule.reason) : /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("div", { className: "card" }, /* @__PURE__ */ React.createElement("div", { style: { display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: 8, alignItems: "center" } }, /* @__PURE__ */ React.createElement("h2", null, "Tableau d'amortissement ", /* @__PURE__ */ React.createElement("span", { className: "badge est" }, "estimation")), /* @__PURE__ */ React.createElement("button", { className: "btn btn-sm", onClick: exportScheduleCSV }, "Exporter en CSV")), /* @__PURE__ */ React.createElement("p", { className: "note" }, schedule.rows.length, " mensualit\xE9s simul\xE9es \xB7 int\xE9r\xEAts totaux ", fmt(schedule.totalInterest), " \xB7 assurance totale ", fmt(schedule.totalInsurance), ". Les lignes dor\xE9es signalent les remboursements anticip\xE9s et recalages. Le d\xE9compte Boursobank pr\xE9vaut."), schedule.events.some((e) => e.type === "alerte") && /* @__PURE__ */ React.createElement("div", { className: "warnbox" }, schedule.events.find((e) => e.type === "alerte").msg), /* @__PURE__ */ React.createElement("div", { className: "tscroll", style: { maxHeight: 520, overflowY: "auto" } }, /* @__PURE__ */ React.createElement("table", { className: "ledger" }, /* @__PURE__ */ React.createElement("thead", null, /* @__PURE__ */ React.createElement("tr", null, /* @__PURE__ */ React.createElement("th", null, "N\xB0"), /* @__PURE__ */ React.createElement("th", { className: "l" }, "Date"), /* @__PURE__ */ React.createElement("th", null, "Mensualit\xE9 HA"), /* @__PURE__ */ React.createElement("th", null, "Int\xE9r\xEAts"), /* @__PURE__ */ React.createElement("th", null, "Capital"), /* @__PURE__ */ React.createElement("th", null, "Ass. Mehdi"), /* @__PURE__ */ React.createElement("th", null, "Ass. Meriem"), /* @__PURE__ */ React.createElement("th", null, "Ass. totale"), /* @__PURE__ */ React.createElement("th", null, "Total"), /* @__PURE__ */ React.createElement("th", null, "Capital restant d\xFB"))), /* @__PURE__ */ React.createElement("tbody", null, (() => {
+      const evText = (e) => e.type === "prep" ? "Remboursement anticip\xE9 de " + fmt(e.applied) + " le " + fmtDate(e.date) + " (" + e.atLabel + ") \u2192 capital restant d\xFB " + fmt(e.balAfter) + (Math.abs(e.newPay - e.oldPay) > EPS ? " \xB7 nouvelle mensualit\xE9 HA estim\xE9e " + fmt(e.newPay) : " \xB7 mensualit\xE9 conserv\xE9e, dur\xE9e r\xE9duite") : e.type === "recalage" ? "Recalage sur le capital restant d\xFB officiel : " + fmt(e.balAfter) + " (au lieu de " + fmt(e.balBefore) + " th\xE9oriques)" : e.msg;
+      const evRow = (e, k) => /* @__PURE__ */ React.createElement("tr", { key: k, className: "evrow" }, /* @__PURE__ */ React.createElement("td", { className: "l", colSpan: 10 }, evText(e)));
+      const isBefore = (e, rowDate) => e.date < rowDate || e.date === rowDate && (e.type !== "prep" || (e.atLabel || "").indexOf("avant") >= 0);
+      const evs = [...schedule.events].sort((a, b) => a.date < b.date ? -1 : 1);
+      let ei = 0;
+      const out = [];
+      schedule.rows.forEach((r) => {
+        while (ei < evs.length && isBefore(evs[ei], r.date)) {
+          out.push(evRow(evs[ei], "e" + ei));
+          ei++;
+        }
+        out.push(
+          /* @__PURE__ */ React.createElement("tr", { key: "r" + r.n }, /* @__PURE__ */ React.createElement("td", { className: "l" }, r.n), /* @__PURE__ */ React.createElement("td", { className: "l" }, fmtDate(r.date)), /* @__PURE__ */ React.createElement("td", { className: "amt" }, fmt(r.payment)), /* @__PURE__ */ React.createElement("td", { className: "amt" }, fmt(r.interest)), /* @__PURE__ */ React.createElement("td", { className: "amt" }, fmt(r.capital)), /* @__PURE__ */ React.createElement("td", { className: "amt" }, fmt(r.insM)), /* @__PURE__ */ React.createElement("td", { className: "amt" }, fmt(r.insMe)), /* @__PURE__ */ React.createElement("td", { className: "amt" }, fmt(r.ins)), /* @__PURE__ */ React.createElement("td", { className: "amt" }, fmt(r.total)), /* @__PURE__ */ React.createElement("td", { className: "amt" }, fmt(r.balance)))
+        );
+        while (ei < evs.length && evs[ei].date === r.date) {
+          out.push(evRow(evs[ei], "e" + ei));
+          ei++;
+        }
+      });
+      while (ei < evs.length) {
+        out.push(evRow(evs[ei], "e" + ei));
+        ei++;
+      }
+      return out;
+    })()))))));
+    const renderRegistry = () => /* @__PURE__ */ React.createElement(React.Fragment, null, opForm && /* @__PURE__ */ React.createElement(
+      OperationForm,
+      {
+        title: opForm.id ? "Modifier l'op\xE9ration" : "Ajouter une op\xE9ration",
+        initial: opForm.form,
+        settings,
+        onSave: saveOp,
+        onCancel: () => setOpForm(null)
+      }
+    ), /* @__PURE__ */ React.createElement("div", { className: "card" }, /* @__PURE__ */ React.createElement("div", { style: { display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: 8, alignItems: "center" } }, /* @__PURE__ */ React.createElement("h2", null, "Registre des paiements"), /* @__PURE__ */ React.createElement("div", { style: { display: "flex", gap: 8 } }, /* @__PURE__ */ React.createElement("button", { className: "btn btn-primary btn-sm", onClick: () => setOpForm({ id: null, form: { ...EMPTY_OP_FORM } }) }, "+ Ajouter une op\xE9ration"), /* @__PURE__ */ React.createElement("button", { className: "btn btn-sm", onClick: exportRegistryCSV }, "Exporter en CSV"))), /* @__PURE__ */ React.createElement("div", { className: "filters" }, /* @__PURE__ */ React.createElement(Field, { label: "Cat\xE9gorie" }, /* @__PURE__ */ React.createElement("select", { value: flt.cat, onChange: (e) => setFlt({ ...flt, cat: e.target.value }) }, /* @__PURE__ */ React.createElement("option", { value: "" }, "Toutes"), CATEGORIES.map((c) => /* @__PURE__ */ React.createElement("option", { key: c }, c)))), /* @__PURE__ */ React.createElement(Field, { label: "Pay\xE9 par" }, /* @__PURE__ */ React.createElement("select", { value: flt.who, onChange: (e) => setFlt({ ...flt, who: e.target.value }) }, /* @__PURE__ */ React.createElement("option", { value: "" }, "Tous"), /* @__PURE__ */ React.createElement("option", null, "Mehdi"), /* @__PURE__ */ React.createElement("option", null, "Meriem"), /* @__PURE__ */ React.createElement("option", { value: "Commun" }, "Compte commun"))), /* @__PURE__ */ React.createElement(Field, { label: "Recherche" }, /* @__PURE__ */ React.createElement("input", { value: flt.q, onChange: (e) => setFlt({ ...flt, q: e.target.value }), placeholder: "libell\xE9, note\u2026" })), /* @__PURE__ */ React.createElement(Field, { label: "Tri" }, /* @__PURE__ */ React.createElement("select", { value: flt.sort, onChange: (e) => setFlt({ ...flt, sort: e.target.value }) }, /* @__PURE__ */ React.createElement("option", { value: "date-asc" }, "Date croissante"), /* @__PURE__ */ React.createElement("option", { value: "date-desc" }, "Date d\xE9croissante"), /* @__PURE__ */ React.createElement("option", { value: "total-desc" }, "Montant d\xE9croissant"), /* @__PURE__ */ React.createElement("option", { value: "total-asc" }, "Montant croissant")))), /* @__PURE__ */ React.createElement("div", { className: "tscroll" }, /* @__PURE__ */ React.createElement("table", { className: "ledger" }, /* @__PURE__ */ React.createElement("thead", null, /* @__PURE__ */ React.createElement("tr", null, /* @__PURE__ */ React.createElement("th", { className: "l" }, "Date"), /* @__PURE__ */ React.createElement("th", { className: "l" }, "Cat\xE9gorie"), /* @__PURE__ */ React.createElement("th", { className: "l" }, "Libell\xE9"), /* @__PURE__ */ React.createElement("th", null, "Total"), /* @__PURE__ */ React.createElement("th", null, "Pay\xE9 Mehdi"), /* @__PURE__ */ React.createElement("th", null, "Pay\xE9 Meriem"), /* @__PURE__ */ React.createElement("th", null, "Compte commun"), /* @__PURE__ */ React.createElement("th", null, "Part Mehdi"), /* @__PURE__ */ React.createElement("th", null, "Part Meriem"), /* @__PURE__ */ React.createElement("th", null, "Capital"), /* @__PURE__ */ React.createElement("th", null, "Int\xE9r\xEAts"), /* @__PURE__ */ React.createElement("th", null, "Assurance"), /* @__PURE__ */ React.createElement("th", null, "Frais"), /* @__PURE__ */ React.createElement("th", { className: "l" }, "Notes"), /* @__PURE__ */ React.createElement("th", { className: "l" }, "Actions"))), /* @__PURE__ */ React.createElement("tbody", null, registryRows.length === 0 && /* @__PURE__ */ React.createElement("tr", null, /* @__PURE__ */ React.createElement("td", { className: "l", colSpan: 15 }, "Aucune op\xE9ration ne correspond aux filtres. Ajoutez une op\xE9ration pour commencer.")), registryRows.map((r) => /* @__PURE__ */ React.createElement("tr", { key: r.src + r.id }, /* @__PURE__ */ React.createElement("td", { className: "l" }, fmtDate(r.date)), /* @__PURE__ */ React.createElement("td", { className: "l" }, r.category), /* @__PURE__ */ React.createElement("td", { className: "l" }, r.label), /* @__PURE__ */ React.createElement("td", { className: "amt" }, fmt(num(r.total))), /* @__PURE__ */ React.createElement("td", { className: "amt", style: { color: "var(--mehdi)" } }, num(r.paidMehdi) ? fmt(num(r.paidMehdi)) : "\u2014"), /* @__PURE__ */ React.createElement("td", { className: "amt", style: { color: "var(--meriem)" } }, num(r.paidMeriem) ? fmt(num(r.paidMeriem)) : "\u2014"), /* @__PURE__ */ React.createElement("td", { className: "amt" }, num(r.paidJoint) ? fmt(num(r.paidJoint)) : "\u2014"), /* @__PURE__ */ React.createElement("td", { className: "amt" }, fmt(num(r.shareMehdi))), /* @__PURE__ */ React.createElement("td", { className: "amt" }, fmt(num(r.shareMeriem))), /* @__PURE__ */ React.createElement("td", { className: "amt" }, num(r.capital) ? fmt(num(r.capital)) : "\u2014"), /* @__PURE__ */ React.createElement("td", { className: "amt" }, num(r.interest) ? fmt(num(r.interest)) : "\u2014"), /* @__PURE__ */ React.createElement("td", { className: "amt" }, num(r.insurance) ? fmt(num(r.insurance)) : "\u2014"), /* @__PURE__ */ React.createElement("td", { className: "amt" }, num(r.fees) ? fmt(num(r.fees)) : "\u2014"), /* @__PURE__ */ React.createElement("td", { className: "l", style: { maxWidth: 220, fontSize: 12, color: "var(--muted)" } }, r.notes), /* @__PURE__ */ React.createElement("td", { className: "l" }, r.src === "op" ? /* @__PURE__ */ React.createElement("div", { style: { display: "flex", gap: 4 } }, /* @__PURE__ */ React.createElement("button", { className: "btn btn-sm", onClick: () => {
+      setOpForm({ id: r.id, form: opToForm(r) });
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    } }, "Modifier"), /* @__PURE__ */ React.createElement("button", { className: "btn btn-sm btn-danger", onClick: () => delOp(r) }, "Suppr.")) : /* @__PURE__ */ React.createElement("span", { className: "badge" }, "Onglet Anticip\xE9s"))))))), /* @__PURE__ */ React.createElement("p", { className: "note", style: { marginTop: 8 } }, "Aucun double comptage : une d\xE9pense pay\xE9e depuis le compte commun est r\xE9partie 50/50 une seule fois et n'est jamais recompt\xE9e comme versement individuel.")));
+    const renderPreps = () => /* @__PURE__ */ React.createElement(React.Fragment, null, prepForm && /* @__PURE__ */ React.createElement(
+      PrepForm,
+      {
+        title: prepForm.id ? "Modifier le remboursement anticip\xE9" : "Ajouter un remboursement anticip\xE9",
+        initial: prepForm.form,
+        onSave: savePrep,
+        onCancel: () => setPrepForm(null)
+      }
+    ), !prepForm && /* @__PURE__ */ React.createElement("div", { className: "card", style: { background: "var(--gold-soft)", borderColor: "var(--gold)" } }, /* @__PURE__ */ React.createElement("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 } }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("h2", null, "Remboursements anticip\xE9s"), /* @__PURE__ */ React.createElement("p", { className: "note" }, "Trait\xE9s dans l'ordre chronologique ; le pr\xEAt est recalcul\xE9 \xE0 chaque \xE9tape.")), /* @__PURE__ */ React.createElement("button", { className: "btn btn-gold", onClick: () => setPrepForm({ id: null, form: { ...EMPTY_PREP_FORM } }) }, "+ Ajouter un remboursement anticip\xE9"))), !schedule.ok && /* @__PURE__ */ React.createElement("div", { className: "warnbox" }, schedule.reason, " Les remboursements peuvent \xEAtre saisis, mais la simulation attend cette date."), impacts.length === 0 && /* @__PURE__ */ React.createElement("div", { className: "card" }, /* @__PURE__ */ React.createElement("p", { className: "note" }, "Aucun remboursement anticip\xE9 enregistr\xE9 pour l'instant.")), impacts.map(({ p, ev, ok, interestSaved, oldEnd, newEnd, monthlySaving, insEstimate }) => /* @__PURE__ */ React.createElement("div", { className: "card", key: p.id, style: p.id === lastPrepId ? { borderColor: "var(--gold)", boxShadow: "0 0 0 2px var(--gold-soft)" } : {} }, /* @__PURE__ */ React.createElement("div", { style: { display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: 8, alignItems: "start" } }, /* @__PURE__ */ React.createElement("h2", null, fmt(num(p.amount)), " le ", fmtDate(p.date), " \u2014 pay\xE9 par", " ", /* @__PURE__ */ React.createElement("span", { className: p.paidBy === "Mehdi" ? "chip chip-m" : "chip chip-me" }, p.paidBy), " ", /* @__PURE__ */ React.createElement("span", { className: "badge est" }, "estimation")), /* @__PURE__ */ React.createElement("div", { style: { display: "flex", gap: 6 } }, /* @__PURE__ */ React.createElement("button", { className: "btn btn-sm", onClick: () => setPrepForm({ id: p.id, form: { date: p.date, amount: String(p.amount), paidBy: p.paidBy, fees: String(p.fees || ""), mode: p.mode, sameDayOrder: p.sameDayOrder || "after", notes: p.notes || "" } }) }, "Modifier"), /* @__PURE__ */ React.createElement("button", { className: "btn btn-sm btn-danger", onClick: () => delPrep(p) }, "Supprimer"))), /* @__PURE__ */ React.createElement("p", { className: "note" }, p.mode === "reduce_duration" ? "Mensualit\xE9 conserv\xE9e, dur\xE9e r\xE9duite" : "Mensualit\xE9 diminu\xE9e, dur\xE9e conserv\xE9e", num(p.fees) > 0 ? " \xB7 frais/indemnit\xE9 : " + fmt(num(p.fees)) + " (co\xFBt, sans effet sur le capital)" : "", p.sameDayOrder === "before" ? " \xB7 appliqu\xE9 avant l'\xE9ch\xE9ance du m\xEAme jour" : "", p.notes ? " \xB7 " + p.notes : ""), ok && ev ? /* @__PURE__ */ React.createElement("div", { className: "tscroll" }, /* @__PURE__ */ React.createElement("table", { className: "ledger" }, /* @__PURE__ */ React.createElement("tbody", null, /* @__PURE__ */ React.createElement("tr", null, /* @__PURE__ */ React.createElement("td", { className: "l" }, "Capital restant d\xFB avant remboursement"), /* @__PURE__ */ React.createElement("td", { className: "amt" }, fmt(ev.balBefore))), /* @__PURE__ */ React.createElement("tr", null, /* @__PURE__ */ React.createElement("td", { className: "l" }, "Montant du remboursement anticip\xE9"), /* @__PURE__ */ React.createElement("td", { className: "amt" }, "\u2212 ", fmt(ev.applied))), /* @__PURE__ */ React.createElement("tr", null, /* @__PURE__ */ React.createElement("td", { className: "l" }, /* @__PURE__ */ React.createElement("b", null, "Nouveau capital restant d\xFB")), /* @__PURE__ */ React.createElement("td", { className: "amt" }, /* @__PURE__ */ React.createElement("b", null, fmt(ev.balAfter)))), /* @__PURE__ */ React.createElement("tr", null, /* @__PURE__ */ React.createElement("td", { className: "l" }, "Ancienne mensualit\xE9 hors assurance"), /* @__PURE__ */ React.createElement("td", { className: "amt" }, fmt(ev.oldPay))), /* @__PURE__ */ React.createElement("tr", null, /* @__PURE__ */ React.createElement("td", { className: "l" }, "Nouvelle mensualit\xE9 hors assurance estim\xE9e"), /* @__PURE__ */ React.createElement("td", { className: "amt" }, fmt(ev.newPay))), /* @__PURE__ */ React.createElement("tr", null, /* @__PURE__ */ React.createElement("td", { className: "l" }, "Assurance estim\xE9e"), /* @__PURE__ */ React.createElement("td", { className: "amt" }, fmt(insEstimate))), /* @__PURE__ */ React.createElement("tr", null, /* @__PURE__ */ React.createElement("td", { className: "l" }, /* @__PURE__ */ React.createElement("b", null, "Nouvelle mensualit\xE9 totale estim\xE9e")), /* @__PURE__ */ React.createElement("td", { className: "amt" }, /* @__PURE__ */ React.createElement("b", null, fmt(ev.newPay + insEstimate)))), /* @__PURE__ */ React.createElement("tr", null, /* @__PURE__ */ React.createElement("td", { className: "l" }, "\xC9conomie mensuelle estim\xE9e"), /* @__PURE__ */ React.createElement("td", { className: "amt" }, fmt(Math.max(0, monthlySaving || 0)))), /* @__PURE__ */ React.createElement("tr", null, /* @__PURE__ */ React.createElement("td", { className: "l" }, "Int\xE9r\xEAts futurs \xE9vit\xE9s estim\xE9s"), /* @__PURE__ */ React.createElement("td", { className: "amt" }, interestSaved == null ? "\u2014" : fmt(interestSaved))), p.mode === "reduce_duration" && /* @__PURE__ */ React.createElement("tr", null, /* @__PURE__ */ React.createElement("td", { className: "l" }, "Nouvelle date de fin de pr\xEAt"), /* @__PURE__ */ React.createElement("td", { className: "amt" }, fmtDate(newEnd), " ", /* @__PURE__ */ React.createElement("span", { className: "note" }, "(au lieu du ", fmtDate(oldEnd), ")"))), /* @__PURE__ */ React.createElement("tr", null, /* @__PURE__ */ React.createElement("td", { className: "l" }, "Contribution suppl\xE9mentaire de ", p.paidBy), /* @__PURE__ */ React.createElement("td", { className: "amt" }, fmt(num(p.amount) + num(p.fees)))), /* @__PURE__ */ React.createElement("tr", null, /* @__PURE__ */ React.createElement("td", { className: "l" }, /* @__PURE__ */ React.createElement("b", null, "Compensation n\xE9cessaire de ", p.paidBy === "Mehdi" ? "Meriem" : "Mehdi", " pour revenir \xE0 50/50")), /* @__PURE__ */ React.createElement("td", { className: "amt" }, /* @__PURE__ */ React.createElement("b", null, fmt((num(p.amount) + num(p.fees)) / 2))))))) : /* @__PURE__ */ React.createElement("p", { className: "note" }, "Simulation indisponible : renseignez la date de premi\xE8re \xE9ch\xE9ance dans les param\xE8tres."))));
+    const renderBalance = () => /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement(Verdict, null), /* @__PURE__ */ React.createElement("div", { className: "card" }, /* @__PURE__ */ React.createElement("h2", null, "Balance \xE0 trois niveaux"), /* @__PURE__ */ React.createElement("div", { className: "tscroll" }, /* @__PURE__ */ React.createElement("table", { className: "ledger" }, /* @__PURE__ */ React.createElement("thead", null, /* @__PURE__ */ React.createElement("tr", null, /* @__PURE__ */ React.createElement("th", { className: "l" }, "Niveau"), /* @__PURE__ */ React.createElement("th", null, "Mehdi"), /* @__PURE__ */ React.createElement("th", null, "Meriem"), /* @__PURE__ */ React.createElement("th", null, "Total"))), /* @__PURE__ */ React.createElement("tbody", null, /* @__PURE__ */ React.createElement("tr", null, /* @__PURE__ */ React.createElement("td", { className: "l" }, /* @__PURE__ */ React.createElement("b", null, "Cash r\xE9ellement pay\xE9"), /* @__PURE__ */ React.createElement("div", { className: "note" }, "toutes les sommes sorties")), /* @__PURE__ */ React.createElement("td", { className: "amt" }, fmt(bal.cashM)), /* @__PURE__ */ React.createElement("td", { className: "amt" }, fmt(bal.cashMe)), /* @__PURE__ */ React.createElement("td", { className: "amt" }, fmt(bal.cashM + bal.cashMe))), /* @__PURE__ */ React.createElement("tr", null, /* @__PURE__ */ React.createElement("td", { className: "l" }, /* @__PURE__ */ React.createElement("b", null, "Capital r\xE9ellement rembours\xE9"), /* @__PURE__ */ React.createElement("div", { className: "note" }, "apports, capital des mensualit\xE9s, remboursements anticip\xE9s")), /* @__PURE__ */ React.createElement("td", { className: "amt" }, fmt(bal.capM)), /* @__PURE__ */ React.createElement("td", { className: "amt" }, fmt(bal.capMe)), /* @__PURE__ */ React.createElement("td", { className: "amt" }, fmt(bal.capM + bal.capMe))), /* @__PURE__ */ React.createElement("tr", null, /* @__PURE__ */ React.createElement("td", { className: "l" }, /* @__PURE__ */ React.createElement("b", null, "Co\xFBts non r\xE9cup\xE9rables"), /* @__PURE__ */ React.createElement("div", { className: "note" }, "int\xE9r\xEAts, assurances, frais et caution non r\xE9cup\xE9r\xE9e")), /* @__PURE__ */ React.createElement("td", { className: "amt" }, fmt(bal.sunkM)), /* @__PURE__ */ React.createElement("td", { className: "amt" }, fmt(bal.sunkMe)), /* @__PURE__ */ React.createElement("td", { className: "amt" }, fmt(bal.sunkM + bal.sunkMe)))))), /* @__PURE__ */ React.createElement("p", { className: "note", style: { marginTop: 8 } }, "Le niveau \xAB capital \xBB et le niveau \xAB co\xFBts \xBB se remplissent \xE0 partir des colonnes capital / int\xE9r\xEAts / assurance / frais du registre : renseignez-les sur les mensualit\xE9s pour un suivi complet. La r\xE8gle de compensation reste calcul\xE9e sur le cash r\xE9ellement pay\xE9", settings.costMode === "individual" ? ", avec l'assurance imput\xE9e selon les montants r\xE9els (Mehdi " + fmt(num(settings.insMehdi)) + " / Meriem " + fmt(num(settings.insMeriem)) + ")" : ", chacun devant supporter 50 % des co\xFBts communs", ".")), /* @__PURE__ */ React.createElement("div", { className: "card" }, /* @__PURE__ */ React.createElement("h2", null, "\xC9volution cumul\xE9e des contributions"), /* @__PURE__ */ React.createElement(ContribChart, { items: bal.items })));
+    const renderHistory = () => /* @__PURE__ */ React.createElement("div", { className: "card" }, /* @__PURE__ */ React.createElement("h2", null, "Historique des modifications"), history.length === 0 ? /* @__PURE__ */ React.createElement("p", { className: "note" }, "Aucune modification enregistr\xE9e.") : /* @__PURE__ */ React.createElement("div", { className: "tscroll" }, /* @__PURE__ */ React.createElement("table", { className: "ledger" }, /* @__PURE__ */ React.createElement("thead", null, /* @__PURE__ */ React.createElement("tr", null, /* @__PURE__ */ React.createElement("th", { className: "l" }, "Horodatage"), /* @__PURE__ */ React.createElement("th", { className: "l" }, "Action"))), /* @__PURE__ */ React.createElement("tbody", null, [...history].reverse().map((h, i) => /* @__PURE__ */ React.createElement("tr", { key: i }, /* @__PURE__ */ React.createElement("td", { className: "l amt", style: { fontSize: 12 } }, new Date(h.ts).toLocaleString("fr-FR")), /* @__PURE__ */ React.createElement("td", { className: "l" }, h.action)))))));
+    const renderExport = () => /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("div", { className: "card" }, /* @__PURE__ */ React.createElement("h2", null, "Export / import"), /* @__PURE__ */ React.createElement("p", { className: "note", style: { marginBottom: 10 } }, "Les donn\xE9es sont conserv\xE9es automatiquement dans le stockage local de cette application. Exportez r\xE9guli\xE8rement un fichier JSON : c'est votre sauvegarde de r\xE9f\xE9rence, r\xE9importable \xE0 tout moment."), /* @__PURE__ */ React.createElement("div", { style: { display: "flex", gap: 8, flexWrap: "wrap" } }, /* @__PURE__ */ React.createElement("button", { className: "btn btn-primary", onClick: exportJSON }, "Exporter toutes les donn\xE9es (JSON)"), /* @__PURE__ */ React.createElement("label", { className: "btn", style: { display: "inline-block" } }, "Importer un fichier JSON", /* @__PURE__ */ React.createElement("input", { type: "file", accept: "application/json,.json", onChange: importJSON, style: { display: "none" } })), /* @__PURE__ */ React.createElement("button", { className: "btn", onClick: exportRegistryCSV }, "Registre en CSV"), /* @__PURE__ */ React.createElement("button", { className: "btn", onClick: exportScheduleCSV, disabled: !schedule.ok }, "Amortissement en CSV")), importMsg && /* @__PURE__ */ React.createElement("div", { className: importMsg.startsWith("Import r\xE9ussi") ? "okbox" : "warnbox", style: { marginTop: 10 } }, importMsg)), /* @__PURE__ */ React.createElement("div", { className: "card" }, /* @__PURE__ */ React.createElement("h2", null, "R\xE9initialisation"), /* @__PURE__ */ React.createElement("p", { className: "note", style: { marginBottom: 8 } }, "Revenir aux donn\xE9es pr\xE9charg\xE9es Boursobank (apports 50/50, caution finale 6 813,38 \u20AC, balance 0 \u20AC)."), /* @__PURE__ */ React.createElement("button", { className: "btn btn-danger", onClick: resetAll }, "R\xE9initialiser aux donn\xE9es pr\xE9charg\xE9es")));
+    if (!loaded) {
+      return /* @__PURE__ */ React.createElement("div", { className: "bc-app" }, /* @__PURE__ */ React.createElement("style", null, STYLES), /* @__PURE__ */ React.createElement("div", { className: "wrap" }, /* @__PURE__ */ React.createElement("div", { className: "card" }, "Chargement des donn\xE9es\u2026")));
+    }
+    return /* @__PURE__ */ React.createElement("div", { className: "bc-app" }, /* @__PURE__ */ React.createElement("style", null, STYLES), /* @__PURE__ */ React.createElement("div", { className: "hd" }, /* @__PURE__ */ React.createElement("div", { className: "hd-inner" }, /* @__PURE__ */ React.createElement("span", { className: "savepill" }, saveState), /* @__PURE__ */ React.createElement("h1", null, "Balance cr\xE9dit & apports", /* @__PURE__ */ React.createElement("span", { className: "who" }, /* @__PURE__ */ React.createElement("span", { className: "chip chip-m" }, "Mehdi"), /* @__PURE__ */ React.createElement("span", { className: "chip chip-me" }, "Meriem"))), /* @__PURE__ */ React.createElement("div", { className: "addr" }, "115 avenue de Paris, Versailles \xB7 Boursobank \xB7 propri\xE9t\xE9 50/50 \xB7 les d\xE9comptes officiels de la banque pr\xE9valent en cas d'\xE9cart"))), /* @__PURE__ */ React.createElement("nav", { className: "tabs", "aria-label": "Sections" }, TABS.map((t) => /* @__PURE__ */ React.createElement("button", { key: t, className: "tab" + (tab === t ? " on" : ""), onClick: () => setTab(t) }, t))), /* @__PURE__ */ React.createElement("main", { className: "wrap" }, tab === TABS[0] && renderDashboard(), tab === TABS[1] && renderSettings(), tab === TABS[2] && renderSchedule(), tab === TABS[3] && renderRegistry(), tab === TABS[4] && renderPreps(), tab === TABS[5] && renderBalance(), tab === TABS[6] && renderHistory(), tab === TABS[7] && renderExport()));
+  }
+  window.__BC_App = App;
+})();
 
-  return (
-    <div className="bc-app">
-      <style>{STYLES}</style>
-      <div className="hd">
-        <div className="hd-inner">
-          <span className="savepill">{saveState}</span>
-          <h1>Balance crédit &amp; apports
-            <span className="who"><span className="chip chip-m">Mehdi</span><span className="chip chip-me">Meriem</span></span>
-          </h1>
-          <div className="addr">115 avenue de Paris, Versailles · Boursobank · propriété 50/50 · les décomptes officiels de la banque prévalent en cas d'écart</div>
-        </div>
-      </div>
-      <nav className="tabs" aria-label="Sections">
-        {TABS.map((t) => (
-          <button key={t} className={"tab" + (tab === t ? " on" : "")} onClick={() => setTab(t)}>{t}</button>
-        ))}
-      </nav>
-      <main className="wrap">
-        {tab === TABS[0] && renderDashboard()}
-        {tab === TABS[1] && renderSettings()}
-        {tab === TABS[2] && renderSchedule()}
-        {tab === TABS[3] && renderRegistry()}
-        {tab === TABS[4] && renderPreps()}
-        {tab === TABS[5] && renderBalance()}
-        {tab === TABS[6] && renderHistory()}
-        {tab === TABS[7] && renderExport()}
-      </main>
-    </div>
-  );
-}
-
-try {
-  const root = ReactDOM.createRoot(document.getElementById("root"));
-  root.render(React.createElement(App));
-} catch (e) { window.__bcError((e && e.stack) ? e.stack : String(e)); }
 </script>
 
+<!-- Rendu -->
 <script>
-// Compilation manuelle : on prend le code du <script type="text/plain">,
-// on le transpile avec Babel, et on l'execute. Babel ne touche a rien d'autre.
 (function(){
-  function run(){
+  function go(){
     try {
-      var src = document.getElementById('app-source').textContent;
-      var out = Babel.transform(src, { presets: ['react'] }).code;
-      var s = document.createElement('script');
-      s.textContent = out;
-      document.body.appendChild(s);
-    } catch(e){ window.__bcError((e && e.stack)? e.stack : String(e)); }
+      if (!window.__BC_App) { setTimeout(go, 50); return; }
+      var root = ReactDOM.createRoot(document.getElementById("root"));
+      root.render(React.createElement(window.__BC_App));
+    } catch (e) { window.__bcError((e && e.stack) ? e.stack : String(e)); }
   }
-  if (window.Babel) run();
-  else { var i=setInterval(function(){ if(window.Babel){clearInterval(i);run();} },50); }
+  go();
 })();
 </script>
 </body>
