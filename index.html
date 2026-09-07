@@ -13,7 +13,6 @@
 <body>
 <div id="root"></div>
 <div id="bcerr"></div>
-
 <script>
 window.__bcError = function(msg){
   var e=document.getElementById('bcerr');
@@ -23,8 +22,6 @@ window.addEventListener('error', function(ev){
   window.__bcError((ev.error && ev.error.stack) ? ev.error.stack : ev.message);
 });
 </script>
-
-<!-- Firebase : module ES independant -->
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
   import { getFirestore, doc, onSnapshot, setDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
@@ -56,8 +53,6 @@ window.addEventListener('error', function(ev){
     window.dispatchEvent(new Event("cloud-ready"));
   } catch (e) { window.__cloudError = e.message; console.error(e); }
 </script>
-
-<!-- Application deja compilee en JS pur (aucun JSX, aucun Babel) -->
 <script>
 (() => {
   const { useState, useEffect, useMemo, useRef } = React;
@@ -253,6 +248,40 @@ window.addEventListener('error', function(ev){
       insurance: 0,
       fees: 0,
       notes: "Virement \xAB Remboursement Frais Travaux \xBB re\xE7u le 01/09/2026. Compense l'acompte cuisine Bocklip (2 369,01 \u20AC) et les meubles SDB/entr\xE9e (752,45 \u20AC) que Mehdi avait avanc\xE9s. Ram\xE8ne la balance \xE0 l'\xE9quilibre."
+    },
+    {
+      id: "init-honoraires-agence",
+      date: "2026-06-12",
+      category: "Frais de notaire",
+      label: "Honoraires de n\xE9gociation agence (Guy Hoquet Versailles)",
+      total: 21354,
+      paidMehdi: 0,
+      paidMeriem: 0,
+      paidJoint: 21354,
+      shareMehdi: 10677,
+      shareMeriem: 10677,
+      capital: 0,
+      interest: 0,
+      insurance: 0,
+      fees: 21354,
+      notes: "Honoraires de n\xE9gociation Guy Hoquet, pay\xE9s via le notaire le 12/06/2026 (relev\xE9 de compte notaire). R\xE9gl\xE9s 50/50 : chacun en supporte 10 677 \u20AC. Co\xFBt non r\xE9cup\xE9rable."
+    },
+    {
+      id: "init-remboursement-notaire",
+      date: "2026-09-03",
+      category: "Autre d\xE9pense commune",
+      label: "Remboursement du trop-vers\xE9 par le notaire",
+      total: -408.18,
+      paidMehdi: 0,
+      paidMeriem: 0,
+      paidJoint: -408.18,
+      shareMehdi: -204.09,
+      shareMeriem: -204.09,
+      capital: 0,
+      interest: 0,
+      insurance: 0,
+      fees: -408.18,
+      notes: "Solde cr\xE9diteur du compte notaire (408,18 \u20AC) restitu\xE9 sur le compte commun (relev\xE9 du 03/09/2026). R\xE9parti 50/50 : r\xE9duit d'autant les frais support\xE9s par chacun."
     }
   ];
   const freshData = () => ({
@@ -1112,8 +1141,6 @@ table.ledger tr:hover td{background:#F7F8F4}
 })();
 
 </script>
-
-<!-- Rendu -->
 <script>
 (function(){
   function go(){
