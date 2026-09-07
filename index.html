@@ -14,27 +14,23 @@
 <body>
 <div id="root"></div>
 <div id="bcerr"></div>
+
 <script>
-// Capture toute erreur et l'affiche a l'ecran au lieu d'une page blanche
 window.__bcError = function(msg){
   var e=document.getElementById('bcerr');
-  if(e){e.style.display='block';e.textContent='Erreur au demarrage :\n\n'+msg+'\n\n(Envoyez cette capture pour diagnostic.)';}
+  if(e){e.style.display='block';e.textContent='Erreur au demarrage :\n\n'+msg;}
 };
 window.addEventListener('error', function(ev){
+  if(ev.filename && ev.filename.indexOf('babel')>=0) return; // on ignore le bruit babel
   window.__bcError((ev.error && ev.error.stack) ? ev.error.stack : ev.message);
-});
-window.addEventListener('unhandledrejection', function(ev){
-  window.__bcError('Promise: '+(ev.reason && ev.reason.message ? ev.reason.message : ev.reason));
 });
 </script>
 
-<!-- Firebase : module ES, expose window.cloudDb -->
+<!-- Bloc Firebase : module ES independant. Type "module" => Babel ne le compile pas. -->
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-  import { getFirestore, doc, onSnapshot, setDoc }
-    from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
-  import { getAuth, signInAnonymously }
-    from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+  import { getFirestore, doc, onSnapshot, setDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+  import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
   try {
     const firebaseConfig = {
       apiKey: "AIzaSyBl2rkpjojD37aPUxtnthosxbhHyLfQDSw",
@@ -51,25 +47,21 @@ window.addEventListener('unhandledrejection', function(ev){
     await signInAnonymously(auth);
     window.cloudDb = {
       listen(onData, onReady) {
-        let readyDone = false;
+        let r = false;
         return onSnapshot(DOC, (snap) => {
-          if (!readyDone && onReady) { readyDone = true; onReady(snap.exists()); }
+          if (!r && onReady) { r = true; onReady(snap.exists()); }
           if (snap.exists()) onData(snap.data().payload);
-        }, (err) => {
-          console.error("snapshot:", err);
-          if (!readyDone && onReady) { readyDone = true; onReady(false); }
-        });
+        }, (err) => { if (!r && onReady) { r = true; onReady(false); } });
       },
       async save(data) { await setDoc(DOC, { payload: data, updatedAt: Date.now() }); }
     };
-  } catch (e) {
-    console.error("Firebase init:", e);
-    window.__cloudError = e.message;
-  }
+    window.dispatchEvent(new Event("cloud-ready"));
+  } catch (e) { window.__cloudError = e.message; }
 </script>
 
-<!-- Application React (JSX transpile par Babel) -->
-<script type="text/babel" data-presets="react">
+<!-- Application : on stocke le code JSX dans une balise NON executable, -->
+<!-- puis on le compile nous-memes avec Babel.transform. Babel n'auto-scanne PAS. -->
+<script type="text/plain" id="app-source">
 const { useState, useEffect, useMemo, useRef } = React;
 
 /* ============================================================
@@ -1629,10 +1621,26 @@ function App() {
 
 try {
   const root = ReactDOM.createRoot(document.getElementById("root"));
-  root.render(<App />);
-} catch (e) {
-  window.__bcError((e && e.stack) ? e.stack : String(e));
-}
+  root.render(React.createElement(App));
+} catch (e) { window.__bcError((e && e.stack) ? e.stack : String(e)); }
+</script>
+
+<script>
+// Compilation manuelle : on prend le code du <script type="text/plain">,
+// on le transpile avec Babel, et on l'execute. Babel ne touche a rien d'autre.
+(function(){
+  function run(){
+    try {
+      var src = document.getElementById('app-source').textContent;
+      var out = Babel.transform(src, { presets: ['react'] }).code;
+      var s = document.createElement('script');
+      s.textContent = out;
+      document.body.appendChild(s);
+    } catch(e){ window.__bcError((e && e.stack)? e.stack : String(e)); }
+  }
+  if (window.Babel) run();
+  else { var i=setInterval(function(){ if(window.Babel){clearInterval(i);run();} },50); }
+})();
 </script>
 </body>
 </html>
