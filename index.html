@@ -24,7 +24,7 @@ window.addEventListener('error', function(ev){
 </script>
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-  import { getFirestore, doc, onSnapshot, setDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+  import { getFirestore, doc, onSnapshot, setDoc, getDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
   import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
   try {
     const firebaseConfig = {
@@ -40,6 +40,16 @@ window.addEventListener('error', function(ev){
     const auth = getAuth(app);
     const DOC = doc(db, "balances", "versailles");
     await signInAnonymously(auth);
+
+    // Horodatage lisible pour nommer les sauvegardes : 2026-11-13T18-44-05
+    const stamp = () => {
+      const d = new Date(), p = (x) => String(x).padStart(2, "0");
+      return d.getFullYear() + "-" + p(d.getMonth()+1) + "-" + p(d.getDate()) + "T"
+           + p(d.getHours()) + "-" + p(d.getMinutes()) + "-" + p(d.getSeconds());
+    };
+    // compte les opérations, pour la garde anti-écrasement
+    const opCount = (data) => (data && Array.isArray(data.ops)) ? data.ops.length : 0;
+
     window.cloudDb = {
       listen(onData, onReady) {
         let r = false;
@@ -48,7 +58,33 @@ window.addEventListener('error', function(ev){
           if (snap.exists()) onData(snap.data().payload);
         }, (err) => { if (!r && onReady) { r = true; onReady(false); } });
       },
-      async save(data) { await setDoc(DOC, { payload: data, updatedAt: Date.now() }); }
+      async save(data) {
+        // 1) GARDE ANTI-ÉCRASEMENT : refuse d'écrire une version qui aurait
+        //    beaucoup moins d'opérations que celle déjà dans le cloud, sauf
+        //    réinitialisation explicite demandée par l'utilisateur.
+        try {
+          const cur = await getDoc(DOC);
+          if (cur.exists() && cur.data().payload) {
+            const oldN = opCount(cur.data().payload);
+            const newN = opCount(data);
+            const isReset = data && data.history && data.history.length &&
+              /aux donn\xE9es pr\xE9charg\xE9es/i.test(data.history[data.history.length-1].action || "");
+            if (!isReset && newN < oldN - 2) {
+              throw new Error("GARDE: écriture refusée (" + newN + " opérations contre " + oldN + " dans le cloud). Protection contre l'écrasement d'une version plus ancienne.");
+            }
+          }
+        } catch (e) {
+          if (String(e.message || "").startsWith("GARDE:")) throw e;
+          // si la lecture de garde échoue, on continue quand même la sauvegarde
+        }
+        // 2) écriture principale
+        await setDoc(DOC, { payload: data, updatedAt: Date.now() });
+        // 3) SAUVEGARDE HORODATÉE accumulée (ne s'écrase jamais entre elles)
+        try {
+          const bak = doc(db, "balances", "versailles", "backups", stamp());
+          await setDoc(bak, { payload: data, createdAt: Date.now(), ops: opCount(data) });
+        } catch (e) { /* la sauvegarde de secours ne doit jamais bloquer la sauvegarde principale */ }
+      }
     };
     window.dispatchEvent(new Event("cloud-ready"));
   } catch (e) { window.__cloudError = e.message; console.error(e); }
